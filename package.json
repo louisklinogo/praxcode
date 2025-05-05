@@ -1,0 +1,339 @@
+{
+  "name": "praxcode",
+  "displayName": "PraxCode - AI Code Assistant",
+  "description": "Highly flexible and context-aware AI code assistant for Visual Studio Code, empowering developers with a choice of LLMs (local, cloud APIs, routing services) and leveraging local vector indexing for deep codebase understanding, rivaling the capabilities of leading AI coding tools.",
+  "version": "0.1.0",
+  "publisher": "praxcode",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/praxcode/praxcode.git"
+  },
+  "engines": {
+    "vscode": "^1.99.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Machine Learning",
+    "Education",
+    "Snippets"
+  ],
+  "keywords": [
+    "ai",
+    "code assistant",
+    "llm",
+    "ollama",
+    "openai",
+    "rag",
+    "vector search",
+    "code explanation"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "praxcode.helloWorld",
+        "title": "PraxCode: Hello World"
+      },
+      {
+        "command": "praxcode.showMenu",
+        "title": "PraxCode: Show Menu"
+      },
+      {
+        "command": "praxcode.indexWorkspace",
+        "title": "PraxCode: Index Workspace"
+      },
+      {
+        "command": "praxcode.explainCode",
+        "title": "PraxCode: Explain Selected Code"
+      },
+      {
+        "command": "praxcode.generateDocs",
+        "title": "PraxCode: Generate Documentation"
+      },
+      {
+        "command": "praxcode.generateTests",
+        "title": "PraxCode: Generate Tests"
+      },
+      {
+        "command": "praxcode.refactorCode",
+        "title": "PraxCode: Refactor Code"
+      },
+      {
+        "command": "praxcode.generateCommitMessage",
+        "title": "PraxCode: Generate Commit Message"
+      },
+      {
+        "command": "praxcode.openChatPanel",
+        "title": "PraxCode: Open Chat Panel"
+      },
+      {
+        "command": "praxcode.toggleMCP",
+        "title": "PraxCode: Toggle Model Context Protocol (MCP) Support"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "when": "editorHasSelection",
+          "command": "praxcode.explainCode",
+          "group": "PraxCode"
+        },
+        {
+          "when": "editorHasSelection || editorTextFocus",
+          "command": "praxcode.generateDocs",
+          "group": "PraxCode"
+        },
+        {
+          "when": "editorHasSelection || editorTextFocus",
+          "command": "praxcode.generateTests",
+          "group": "PraxCode"
+        },
+        {
+          "when": "editorHasSelection || editorTextFocus",
+          "command": "praxcode.refactorCode",
+          "group": "PraxCode"
+        }
+      ],
+      "scm/title": [
+        {
+          "command": "praxcode.generateCommitMessage",
+          "group": "navigation",
+          "when": "scmProvider == git"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "praxcode.explainCode",
+          "when": "editorHasSelection"
+        },
+        {
+          "command": "praxcode.generateDocs",
+          "when": "editorHasSelection || editorTextFocus"
+        },
+        {
+          "command": "praxcode.generateTests",
+          "when": "editorHasSelection || editorTextFocus"
+        },
+        {
+          "command": "praxcode.refactorCode",
+          "when": "editorHasSelection || editorTextFocus"
+        },
+        {
+          "command": "praxcode.generateCommitMessage",
+          "when": "scmProvider == git"
+        },
+        {
+          "command": "praxcode.indexWorkspace"
+        },
+        {
+          "command": "praxcode.showMenu"
+        },
+        {
+          "command": "praxcode.openChatPanel"
+        },
+        {
+          "command": "praxcode.helloWorld"
+        }
+      ]
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "praxcode-sidebar",
+          "title": "PraxCode",
+          "icon": "$(comment-discussion)"
+        }
+      ]
+    },
+    "views": {
+      "praxcode-sidebar": [
+        {
+          "type": "webview",
+          "id": "praxcode.sidebarChatView",
+          "name": "PraxCode Chat",
+          "icon": "$(comment-discussion)"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "praxcode.sidebarChatView",
+        "contents": "PraxCode Chat is ready to assist you with your coding tasks."
+      }
+    ],
+    "configuration": {
+      "title": "PraxCode",
+      "properties": {
+        "praxcode.llmProvider": {
+          "type": "string",
+          "enum": [
+            "ollama",
+            "openai",
+            "anthropic",
+            "google",
+            "openrouter",
+            "custom"
+          ],
+          "default": "ollama",
+          "description": "The LLM provider to use for generating code and responses"
+        },
+        "praxcode.ollamaUrl": {
+          "type": "string",
+          "default": "http://localhost:11434",
+          "description": "The URL of the Ollama API server"
+        },
+        "praxcode.ollamaModel": {
+          "type": "string",
+          "default": "llama3",
+          "description": "The model to use with Ollama"
+        },
+        "praxcode.openaiModel": {
+          "type": "string",
+          "default": "gpt-3.5-turbo",
+          "description": "The model to use with OpenAI"
+        },
+        "praxcode.anthropicModel": {
+          "type": "string",
+          "default": "claude-3-haiku-20240307",
+          "description": "The model to use with Anthropic"
+        },
+        "praxcode.googleModel": {
+          "type": "string",
+          "default": "gemini-pro",
+          "description": "The model to use with Google"
+        },
+        "praxcode.openrouterModel": {
+          "type": "string",
+          "default": "openai/gpt-3.5-turbo",
+          "description": "The model to use with OpenRouter"
+        },
+        "praxcode.customProviderUrl": {
+          "type": "string",
+          "default": "http://localhost:8000",
+          "description": "The URL for the custom LLM provider"
+        },
+        "praxcode.customProviderModel": {
+          "type": "string",
+          "default": "default",
+          "description": "The model to use with the custom provider"
+        },
+        "praxcode.mcp.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable or disable Model Context Protocol (MCP) support"
+        },
+        "praxcode.mcp.endpointUrl": {
+          "type": "string",
+          "default": "http://localhost:8000",
+          "description": "The URL for the MCP-compatible endpoint"
+        },
+        "praxcode.mcp.endpointModel": {
+          "type": "string",
+          "default": "default",
+          "description": "The model to use with the MCP-compatible endpoint"
+        },
+        "praxcode.vectorStore.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable or disable the vector store for codebase indexing"
+        },
+        "praxcode.vectorStore.embeddingModel": {
+          "type": "string",
+          "default": "nomic-embed-text",
+          "description": "The embedding model to use for vector embeddings"
+        },
+        "praxcode.indexing.includePatterns": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "**/*.{js,ts,jsx,tsx,py,java,c,cpp,cs,go,rb,php,html,css,md}"
+          ],
+          "description": "Glob patterns for files to include in indexing"
+        },
+        "praxcode.indexing.excludePatterns": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "**/node_modules/**",
+            "**/dist/**",
+            "**/build/**",
+            "**/.git/**"
+          ],
+          "description": "Glob patterns for files to exclude from indexing"
+        },
+        "praxcode.indexing.autoReindexOnSave": {
+          "type": "boolean",
+          "default": false,
+          "description": "Automatically reindex files when they are saved"
+        },
+        "praxcode.codeCompletion.enableInlineCompletion": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable inline code completion"
+        },
+        "praxcode.ui.showStatusBarItem": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show or hide the status bar item"
+        },
+        "praxcode.cache.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable or disable caching for embeddings and other operations"
+        },
+        "praxcode.cache.ttl": {
+          "type": "number",
+          "default": 86400000,
+          "description": "Time to live for cached items in milliseconds (default: 24 hours)"
+        },
+        "praxcode.logging.logLevel": {
+          "type": "string",
+          "enum": [
+            "debug",
+            "info",
+            "warn",
+            "error"
+          ],
+          "default": "info",
+          "description": "The log level for the extension"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile && npm run lint",
+    "lint": "eslint src",
+    "test": "vscode-test"
+  },
+  "dependencies": {
+    "axios": "^1.6.7",
+    "diff": "^7.0.0",
+    "lancedb": "^0.0.1",
+    "uuid": "^9.0.1"
+  },
+  "devDependencies": {
+    "@types/diff": "^7.0.2",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "20.x",
+    "@types/sinon": "^17.0.3",
+    "@types/uuid": "^9.0.8",
+    "@types/vscode": "^1.99.0",
+    "@typescript-eslint/eslint-plugin": "^8.31.1",
+    "@typescript-eslint/parser": "^8.31.1",
+    "@vscode/test-cli": "^0.0.10",
+    "@vscode/test-electron": "^2.5.2",
+    "eslint": "^9.25.1",
+    "sinon": "^17.0.1",
+    "typescript": "^5.8.3"
+  }
+}
