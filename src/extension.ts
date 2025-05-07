@@ -183,7 +183,8 @@ export async function activate(context: vscode.ExtensionContext) {
             const ragOrchestrator = new RAGOrchestrator(
                 vectorStore,
                 embeddingService,
-                llmService
+                llmService,
+                configManager
             );
 
             // Create and execute the explain code command
@@ -205,7 +206,8 @@ export async function activate(context: vscode.ExtensionContext) {
             const ragOrchestrator = new RAGOrchestrator(
                 vectorStore,
                 embeddingService,
-                llmService
+                llmService,
+                configManager
             );
 
             // Create and execute the generate docs command
@@ -227,7 +229,8 @@ export async function activate(context: vscode.ExtensionContext) {
             const ragOrchestrator = new RAGOrchestrator(
                 vectorStore,
                 embeddingService,
-                llmService
+                llmService,
+                configManager
             );
 
             // Create and execute the generate tests command
@@ -249,7 +252,8 @@ export async function activate(context: vscode.ExtensionContext) {
             const ragOrchestrator = new RAGOrchestrator(
                 vectorStore,
                 embeddingService,
-                llmService
+                llmService,
+                configManager
             );
 
             // Create and execute the refactor code command

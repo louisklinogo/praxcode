@@ -10,7 +10,8 @@ export enum LLMProviderType {
     ANTHROPIC = 'anthropic',
     GOOGLE = 'google',
     OPENROUTER = 'openrouter',
-    CUSTOM = 'custom'
+    CUSTOM = 'custom',
+    NONE = 'none'
 }
 
 /**
@@ -48,6 +49,11 @@ export interface PraxCodeConfiguration {
     // Vector store settings
     vectorStoreEnabled: boolean;
     embeddingModel: string;
+
+    // RAG settings
+    ragOnlyModeEnabled: boolean;
+    ragOnlyModeForceEnabled: boolean;
+    ragMinRelevanceScore: number;
 
     // Indexing settings
     includePatterns: string[];
@@ -130,6 +136,11 @@ export class ConfigurationManager {
             // Vector store settings
             vectorStoreEnabled: config.get<boolean>('vectorStore.enabled', true),
             embeddingModel: config.get<string>('vectorStore.embeddingModel', 'nomic-embed-text'),
+
+            // RAG settings
+            ragOnlyModeEnabled: config.get<boolean>('rag.onlyModeEnabled', true),
+            ragOnlyModeForceEnabled: config.get<boolean>('rag.onlyModeForceEnabled', false),
+            ragMinRelevanceScore: config.get<number>('rag.minRelevanceScore', 0.3),
 
             // Indexing settings
             includePatterns: config.get<string[]>('indexing.includePatterns', ['**/*.{js,ts,jsx,tsx,py,java,c,cpp,cs,go,rb,php,html,css,md}']),

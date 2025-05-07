@@ -173,7 +173,8 @@ Always explain what you're doing and why. Be thorough but concise.`;
                     this._ragOrchestrator = new RAGOrchestrator(
                         this._vectorStore,
                         this._embeddingService,
-                        llmService
+                        llmService,
+                        this._configManager
                     );
                     logger.info('RAG orchestrator initialized');
                 }

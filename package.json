@@ -3,7 +3,7 @@
   "displayName": "PraxCode - AI Code Assistant",
   "description": "Highly flexible and context-aware AI code assistant for Visual Studio Code, empowering developers with a choice of LLMs (local, cloud APIs, routing services) and leveraging local vector indexing for deep codebase understanding, rivaling the capabilities of leading AI coding tools.",
   "version": "0.1.0",
-  "publisher": "praxcode",
+  "publisher": "praxai",
   "repository": {
     "type": "git",
     "url": "https://github.com/praxcode/praxcode.git"
@@ -175,10 +175,11 @@
             "anthropic",
             "google",
             "openrouter",
-            "custom"
+            "custom",
+            "none"
           ],
           "default": "ollama",
-          "description": "The LLM provider to use for generating code and responses"
+          "description": "The LLM provider to use for generating code and responses. Set to 'none' to use RAG-only mode."
         },
         "praxcode.ollamaUrl": {
           "type": "string",
@@ -244,6 +245,16 @@
           "type": "string",
           "default": "nomic-embed-text",
           "description": "The embedding model to use for vector embeddings"
+        },
+        "praxcode.rag.onlyModeEnabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable RAG-only mode when LLM is unavailable (no API key, offline, etc.)"
+        },
+        "praxcode.rag.onlyModeForceEnabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Force RAG-only mode even when LLM is available (for privacy or offline use)"
         },
         "praxcode.indexing.includePatterns": {
           "type": "array",

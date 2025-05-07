@@ -205,7 +205,8 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
                     this._ragOrchestrator = new RAGOrchestrator(
                         this._vectorStore,
                         this._embeddingService,
-                        llmService
+                        llmService,
+                        this._configManager
                     );
                     logger.info('RAG orchestrator initialized');
                 }

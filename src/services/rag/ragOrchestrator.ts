@@ -4,6 +4,9 @@ import { EmbeddingService } from '../embedding/embeddingService';
 import { LLMService, ChatMessage, ChatCompletionOptions } from '../llm/llmService';
 import { ModelContextProtocolService } from '../mcp/modelContextProtocolService';
 import { MCPActionHandler } from '../action/mcpActionHandler';
+import { LLMAvailabilityService } from '../llm/llmAvailabilityService';
+import { ConfigurationManager } from '../../utils/configurationManager';
+import * as path from 'path';
 
 /**
  * Interface for RAG options
@@ -15,6 +18,15 @@ export interface RAGOptions {
     includeSystemPrompt?: boolean;
     systemPrompt?: string;
     useMCP?: boolean; // Whether to use Model Context Protocol if available
+    forceRagOnlyMode?: boolean; // Force RAG-only mode even if LLM is available
+}
+
+/**
+ * Interface for RAG-only search results
+ */
+export interface RAGOnlyResults {
+    searchResults: SearchResult[];
+    query: string;
 }
 
 /**
@@ -26,23 +38,121 @@ export class RAGOrchestrator {
     private llmService: LLMService;
     private mcpService: ModelContextProtocolService;
     private mcpActionHandler: MCPActionHandler;
+    private llmAvailabilityService: LLMAvailabilityService;
+    private configManager: ConfigurationManager;
 
     /**
      * Constructor
      * @param vectorStore The vector store service
      * @param embeddingService The embedding service
      * @param llmService The LLM service
+     * @param configManager The configuration manager
      */
     constructor(
         vectorStore: VectorStoreService,
         embeddingService: EmbeddingService,
-        llmService: LLMService
+        llmService: LLMService,
+        configManager: ConfigurationManager
     ) {
         this.vectorStore = vectorStore;
         this.embeddingService = embeddingService;
         this.llmService = llmService;
+        this.configManager = configManager;
         this.mcpService = ModelContextProtocolService.getInstance();
         this.mcpActionHandler = MCPActionHandler.getInstance();
+        this.llmAvailabilityService = LLMAvailabilityService.getInstance(configManager);
+    }
+
+    /**
+     * Check if RAG-only mode should be used
+     * @param options The RAG options
+     * @returns A promise that resolves to a boolean indicating if RAG-only mode should be used
+     */
+    public async shouldUseRagOnlyMode(options?: RAGOptions): Promise<boolean> {
+        try {
+            const config = this.configManager.getConfiguration();
+
+            // Check if RAG-only mode is explicitly forced in options
+            if (options?.forceRagOnlyMode) {
+                logger.debug('RAG-only mode forced by options');
+                return true;
+            }
+
+            // Check if RAG-only mode is forced in configuration
+            if (config.ragOnlyModeForceEnabled) {
+                logger.debug('RAG-only mode forced by configuration');
+                return true;
+            }
+
+            // Check if RAG-only mode is enabled and LLM is not available
+            if (config.ragOnlyModeEnabled) {
+                const llmAvailable = await this.llmAvailabilityService.isLLMAvailable();
+                if (!llmAvailable) {
+                    logger.debug('RAG-only mode enabled and LLM is not available');
+                    return true;
+                }
+            }
+
+            return false;
+        } catch (error) {
+            logger.error('Error checking if RAG-only mode should be used', error);
+            return false;
+        }
+    }
+
+    /**
+     * Get RAG-only results for a query
+     * @param query The query
+     * @param options The RAG options
+     * @returns A promise that resolves to the RAG-only results
+     */
+    public async getRagOnlyResults(query: string, options?: RAGOptions): Promise<RAGOnlyResults> {
+        try {
+            // Generate embedding for the query
+            const [queryEmbedding] = await this.embeddingService.generateEmbeddings([query]);
+
+            // Get the configured minimum relevance score
+            const config = this.configManager.getConfiguration();
+            const minRelevanceScore = options?.minScore || config.ragMinRelevanceScore;
+
+            // Search for relevant documents with the configured minimum score threshold
+            const searchResults = await this.vectorStore.similaritySearch(queryEmbedding, {
+                limit: options?.maxResults || 5,
+                minScore: minRelevanceScore
+            });
+
+            logger.debug(`Found ${searchResults.length} relevant documents for RAG-only query`, {
+                query: query.substring(0, 100),
+                resultCount: searchResults.length
+            });
+
+            // If we have too few results with the higher threshold, try again with a lower one
+            if (searchResults.length < 2) {
+                logger.debug('Few results with high threshold, trying with lower threshold');
+                const moreResults = await this.vectorStore.similaritySearch(queryEmbedding, {
+                    limit: options?.maxResults || 5,
+                    minScore: 0.1  // Lower threshold as fallback
+                });
+
+                logger.debug(`Found ${moreResults.length} documents with lower threshold`);
+
+                // Only return the results if we found more than before
+                if (moreResults.length > searchResults.length) {
+                    return {
+                        searchResults: moreResults,
+                        query
+                    };
+                }
+            }
+
+            return {
+                searchResults,
+                query
+            };
+        } catch (error) {
+            logger.error('Failed to get RAG-only results', error);
+            throw new Error(`Failed to get RAG-only results: ${error}`);
+        }
     }
 
     /**
@@ -137,6 +247,94 @@ export class RAGOrchestrator {
             if (!query.trim()) {
                 callback("Please provide a query to search for relevant code.", true);
                 return;
+            }
+
+            // Check if we should use RAG-only mode
+            const useRagOnlyMode = await this.shouldUseRagOnlyMode(options);
+            if (useRagOnlyMode) {
+                logger.info('Using RAG-only mode for query');
+
+                try {
+                    // Get RAG-only results
+                    const ragOnlyResults = await this.getRagOnlyResults(query, options);
+
+                    // Check if we have any results
+                    if (ragOnlyResults.searchResults.length === 0) {
+                        const noResultsMessage = `## No Relevant Code Found
+
+I searched for code related to: **${query}**
+
+No code snippets with sufficient relevance were found in the indexed codebase. This could be because:
+
+1. The code you're looking for might not exist in the indexed files
+2. The query terms might not match the terminology used in the code
+3. The workspace might not be fully indexed
+
+### Suggestions:
+- Try using different search terms
+- Make sure your workspace is indexed using the 'PraxCode: Index Workspace' command
+- Check if the file you're looking for is included in the indexing patterns in settings`;
+
+                        callback(noResultsMessage, true);
+                        return;
+                    }
+
+                    // Format the results as a response with better context
+                    let response = "No LLM available. Showing relevant codebase context for your query: **" + query + "**\n\n";
+
+                    // Add explanation about what the user is seeing
+                    response += "The following code snippets were found based on semantic similarity to your query. ";
+                    response += "They are ranked by relevance score (higher is better).\n\n";
+
+                    // Sort results by score (highest first) to show most relevant first
+                    const sortedResults = [...ragOnlyResults.searchResults].sort((a, b) => b.score - a.score);
+
+                    // Add a summary of what was found
+                    response += "### Summary of Results\n\n";
+                    for (let i = 0; i < sortedResults.length; i++) {
+                        const result = sortedResults[i];
+                        const doc = result.document;
+                        const filePath = path.basename(doc.metadata.filePath); // Just the filename for the summary
+                        const score = result.score.toFixed(2);
+
+                        response += `${i+1}. **${filePath}** - Relevance: ${score}\n`;
+                    }
+
+                    response += "\n### Detailed Results\n\n";
+
+                    // Add the detailed results
+                    for (const result of sortedResults) {
+                        const doc = result.document;
+                        const filePath = doc.metadata.filePath;
+                        const startLine = doc.metadata.startLine;
+                        const endLine = doc.metadata.endLine;
+                        const language = doc.metadata.language || 'text';
+                        const score = result.score.toFixed(2);
+
+                        // Add more context about the file
+                        response += `#### File: ${filePath}${startLine ? ` (Lines ${startLine}-${endLine})` : ''}\n`;
+                        response += `Relevance Score: ${score}\n\n`;
+
+                        // Add the code snippet
+                        response += '```' + language + '\n';
+                        response += doc.text + '\n';
+                        response += '```\n\n';
+
+                        // Add a separator between results for better readability
+                        response += "---\n\n";
+                    }
+
+                    // Add a note about how to use this information
+                    response += "**Note:** To get AI-powered explanations of this code, please configure a valid LLM provider in the settings.\n";
+
+                    // Send the response
+                    callback(response, true);
+                    return;
+                } catch (ragOnlyError) {
+                    logger.error('Failed to get RAG-only results', ragOnlyError);
+                    callback(`Error retrieving code context: ${ragOnlyError instanceof Error ? ragOnlyError.message : String(ragOnlyError)}. Please ensure your workspace is indexed.`, true);
+                    return;
+                }
             }
 
             // Generate embedding for the query
