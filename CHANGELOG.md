@@ -24,3 +24,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Enhanced embedding service with fallback mechanisms
 - Fixed RAG system to properly retrieve and use indexed content
 - Improved error handling throughout the system
+
+## [0.1.1] - 2025-05-01
+
+### Added
+- RAG-only mode for better results when LLM is unavailable
+- Configurable minimum relevance score for RAG results
+- Improved formatting of RAG-only results with better organization
+- Detailed error messages when no relevant code is found
+- Sorting of RAG results by relevance score
+
+### Fixed
+- Fixed issue with indexing not working properly on Windows
+- Fixed issue with code explanation not working properly on large codebases
+- Fixed issue with RAG results not being properly formatted in the chat UI
