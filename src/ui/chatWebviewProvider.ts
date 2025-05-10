@@ -188,10 +188,40 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
 
                 // Initialize RAG orchestrator if needed
                 if (!this._ragOrchestrator || model) {
+                    logger.debug(`Creating new RAG orchestrator. Current orchestrator exists: ${!!this._ragOrchestrator}, model specified: ${model || 'none'}`);
+
+                    // Get the LLM service
                     const llmService = await this._llmServiceFactory.getService();
+                    logger.debug(`Got LLM service: ${llmService.getName()}`);
+
+                    // Log the current configuration
+                    const currentConfig = this._configManager.getConfiguration();
+                    logger.debug(`Current configuration: provider=${currentConfig.llmProvider}, ollamaModel=${currentConfig.ollamaModel}`);
+                    logger.debug(`RAG settings: enabled=${currentConfig.ragOnlyModeEnabled}, forced=${currentConfig.ragOnlyModeForceEnabled}`);
 
                     // If model is specified, check if we need to change it
                     if (model) {
+                        // Parse the model string if it's in the new format (provider:model)
+                        let modelName = model;
+                        let provider = '';
+
+                        if (model.includes(':')) {
+                            // Handle special case for Ollama models that may contain colons
+                            if (model.startsWith('ollama:')) {
+                                provider = 'ollama';
+                                modelName = model.substring('ollama:'.length);
+                                logger.debug(`Parsed Ollama model: provider=${provider}, modelName=${modelName}`);
+                            } else {
+                                // For other providers, split by the first colon
+                                const firstColonIndex = model.indexOf(':');
+                                if (firstColonIndex !== -1) {
+                                    provider = model.substring(0, firstColonIndex);
+                                    modelName = model.substring(firstColonIndex + 1);
+                                    logger.debug(`Parsed model: provider=${provider}, modelName=${modelName}`);
+                                }
+                            }
+                        }
+
                         // Update the configuration temporarily for this request
                         const config = this._configManager.getConfiguration();
                         const currentModel = this._getCurrentModelFromConfig(config);
@@ -202,6 +232,8 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
                         }
                     }
 
+                    // Create the RAG orchestrator
+                    logger.debug('Creating new RAG orchestrator with current LLM service');
                     this._ragOrchestrator = new RAGOrchestrator(
                         this._vectorStore,
                         this._embeddingService,
@@ -287,6 +319,21 @@ Always explain what you're doing and why. Be thorough but concise.`;
 
                 // If model is specified, log that we're using a different model
                 if (model) {
+                    // Parse the model string if it's in the new format (provider:model)
+                    let modelName = model;
+                    if (model.includes(':')) {
+                        // Handle special case for Ollama models that may contain colons
+                        if (model.startsWith('ollama:')) {
+                            modelName = model.substring('ollama:'.length);
+                        } else {
+                            // For other providers, split by the first colon
+                            const firstColonIndex = model.indexOf(':');
+                            if (firstColonIndex !== -1) {
+                                modelName = model.substring(firstColonIndex + 1);
+                            }
+                        }
+                    }
+
                     const config = this._configManager.getConfiguration();
                     const currentModel = this._getCurrentModelFromConfig(config);
 
@@ -418,16 +465,24 @@ Always explain what you're doing and why. Be thorough but concise.`;
         }
 
         try {
-            const llmService = await this._llmServiceFactory.getService();
             const config = this._configManager.getConfiguration();
 
-            // Try to get available models
-            let availableModels: string[] = [];
-            try {
-                availableModels = await llmService.getAvailableModels();
-            } catch (error) {
-                logger.warn('Could not fetch available models', error);
-                // Continue even if we can't get models
+            // Get all available providers and their models
+            const allProviders = await this._llmServiceFactory.getAllProviders();
+
+            // Flatten all models into a single array with provider prefixes
+            const allModels: string[] = [];
+
+            // Add RAG-only option first
+            allModels.push('rag-only');
+
+            // Add all other models with provider prefixes
+            for (const provider of allProviders) {
+                if (provider.provider !== 'RAG-Only') {
+                    for (const model of provider.models) {
+                        allModels.push(`${provider.provider.toLowerCase()}:${model}`);
+                    }
+                }
             }
 
             // Get the current model - use session model if available
@@ -439,40 +494,59 @@ Always explain what you're doing and why. Be thorough but concise.`;
                 logger.info(`Using session model: ${currentModel}`);
             } else {
                 // Otherwise get from config based on provider type
-                switch (config.llmProvider) {
-                    case 'ollama':
-                        currentModel = config.ollamaModel;
-                        break;
-                    case 'openai':
-                        currentModel = config.openaiModel;
-                        break;
-                    case 'anthropic':
-                        currentModel = config.anthropicModel;
-                        break;
-                    case 'google':
-                        currentModel = config.googleModel;
-                        break;
-                    case 'openrouter':
-                        currentModel = config.openrouterModel;
-                        break;
-                    case 'custom':
-                        currentModel = config.customProviderModel;
-                        break;
-                    default:
-                        currentModel = 'default';
+                if (config.llmProvider === 'none' || config.ragOnlyModeForceEnabled) {
+                    currentModel = 'rag-only';
+                } else {
+                    switch (config.llmProvider) {
+                        case 'ollama':
+                            currentModel = `ollama:${config.ollamaModel}`;
+                            break;
+                        case 'openai':
+                            currentModel = `openai:${config.openaiModel}`;
+                            break;
+                        case 'anthropic':
+                            currentModel = `anthropic:${config.anthropicModel}`;
+                            break;
+                        case 'google':
+                            currentModel = `google:${config.googleModel}`;
+                            break;
+                        case 'openrouter':
+                            currentModel = `openrouter:${config.openrouterModel}`;
+                            break;
+                        case 'custom':
+                            currentModel = `custom:${config.customProviderModel}`;
+                            break;
+                        default:
+                            currentModel = 'rag-only';
+                    }
                 }
             }
+
+            // Get the current LLM service for the provider name
+            const llmService = await this._llmServiceFactory.getService();
 
             this._view.webview.postMessage({
                 command: 'setProviderInfo',
                 provider: {
                     name: llmService.getName(),
                     model: currentModel,
-                    availableModels: availableModels
+                    availableModels: allModels
                 }
             });
         } catch (error) {
             logger.error('Error getting provider info', error);
+
+            // Fallback to basic model list
+            if (this._view) {
+                this._view.webview.postMessage({
+                    command: 'setProviderInfo',
+                    provider: {
+                        name: 'PraxCode',
+                        model: 'rag-only',
+                        availableModels: ['rag-only', 'ollama:llama3']
+                    }
+                });
+            }
         }
     }
 
@@ -486,53 +560,209 @@ Always explain what you're doing and why. Be thorough but concise.`;
         }
 
         try {
-            // Update the configuration
-            const config = this._configManager.getConfiguration();
+            // Check if this is RAG-only mode
+            if (model === 'rag-only') {
+                // Set the provider to 'none' to enable RAG-only mode
+                logger.debug('Setting llmProvider to "none" for RAG-only mode');
+                await vscode.workspace.getConfiguration('praxcode').update('llmProvider', 'none', vscode.ConfigurationTarget.Workspace);
+                logger.info('Switched to RAG-only mode');
+
+                // Force reload the configuration to ensure we have the latest values
+                this._configManager.reloadConfiguration();
+                const updatedConfig = this._configManager.getConfiguration();
+                logger.debug(`After update, llmProvider is: ${updatedConfig.llmProvider}`);
+
+                // Double-check that the setting was actually updated
+                if (updatedConfig.llmProvider !== 'none') {
+                    logger.warn(`Configuration update failed! llmProvider is still: ${updatedConfig.llmProvider}`);
+                    // Try updating again with a different approach
+                    try {
+                        await vscode.workspace.getConfiguration().update('praxcode.llmProvider', 'none', vscode.ConfigurationTarget.Workspace);
+                        logger.debug('Attempted alternative configuration update method');
+                        this._configManager.reloadConfiguration();
+                        logger.debug(`After second attempt, llmProvider is: ${this._configManager.getConfiguration().llmProvider}`);
+                    } catch (secondError) {
+                        logger.error('Failed to update configuration on second attempt', secondError);
+                    }
+                }
+
+                // Store the model in memory for this session
+                this._currentSessionModel = model;
+
+                // Reset the LLM service to use the new model
+                logger.debug('Resetting LLM service to use RAG-only mode');
+                this._llmServiceFactory.resetService();
+
+                // Get the updated LLM service with the new model
+                logger.debug('Getting updated LLM service for RAG-only mode');
+                const llmService = await this._llmServiceFactory.getService();
+                logger.debug(`New LLM service created: ${llmService.getName()}`);
+
+                // Reset the RAG orchestrator to use the new LLM service
+                logger.debug('Resetting RAG orchestrator for RAG-only mode');
+                this._ragOrchestrator = null;
+
+                // Update the UI with the new model
+                this._view.webview.postMessage({
+                    command: 'setProviderInfo',
+                    provider: {
+                        name: 'RAG-Only Mode',
+                        model: model,
+                        availableModels: await this._getFormattedModelList()
+                    }
+                });
+
+                // Show a confirmation message
+                this._view.webview.postMessage({
+                    command: 'addMessage',
+                    message: {
+                        role: 'assistant',
+                        content: `Switched to RAG-only mode. No LLM will be used. Only codebase search results will be shown.`
+                    }
+                });
+
+                return;
+            }
+
+            // Parse the model string (format: "provider:model")
+            // Handle special case for Ollama models that may contain colons
+            let provider: string;
+            let modelName: string;
+
+            if (model.startsWith('ollama:')) {
+                // For Ollama models, the provider is 'ollama' and the rest is the model name
+                provider = 'ollama';
+                modelName = model.substring('ollama:'.length);
+            } else {
+                // For other providers, split by the first colon
+                const firstColonIndex = model.indexOf(':');
+                if (firstColonIndex === -1) {
+                    throw new Error(`Invalid model format: ${model}. Expected format: "provider:model"`);
+                }
+
+                provider = model.substring(0, firstColonIndex);
+                modelName = model.substring(firstColonIndex + 1);
+            }
+
+            // Update the provider setting
+            logger.debug(`Changing provider from ${this._configManager.getConfiguration().llmProvider} to ${provider}`);
+            await vscode.workspace.getConfiguration('praxcode').update('llmProvider', provider, vscode.ConfigurationTarget.Workspace);
+            logger.info(`Updated provider to ${provider}`);
+
+            // Force reload the configuration to ensure we have the latest values
+            this._configManager.reloadConfiguration();
+            const updatedConfig = this._configManager.getConfiguration();
+            logger.debug(`After update, llmProvider is: ${updatedConfig.llmProvider}`);
+
+            // Double-check that the setting was actually updated
+            if (updatedConfig.llmProvider !== provider) {
+                logger.warn(`Configuration update failed! llmProvider is still: ${updatedConfig.llmProvider}`);
+                // Try updating again with a different approach
+                try {
+                    await vscode.workspace.getConfiguration().update(`praxcode.llmProvider`, provider, vscode.ConfigurationTarget.Workspace);
+                    logger.debug('Attempted alternative configuration update method');
+                    this._configManager.reloadConfiguration();
+                    logger.debug(`After second attempt, llmProvider is: ${this._configManager.getConfiguration().llmProvider}`);
+                } catch (secondError) {
+                    logger.error('Failed to update configuration on second attempt', secondError);
+                }
+            }
 
             // Update the appropriate model setting based on provider type
-            const settingKey = `${config.llmProvider}Model`;
+            const settingKey = `${provider}Model`;
 
             // We need to update the VS Code settings
             // Use ConfigurationTarget.Workspace instead of Global to avoid file save dialog
             try {
-                await vscode.workspace.getConfiguration('praxcode').update(settingKey, model, vscode.ConfigurationTarget.Workspace);
-                logger.info(`Updated model setting ${settingKey} to ${model} at workspace level`);
+                // Get the current model value based on provider
+                let currentModelValue = '';
+                const config = this._configManager.getConfiguration();
+                switch (provider) {
+                    case 'ollama':
+                        currentModelValue = config.ollamaModel;
+                        break;
+                    case 'openai':
+                        currentModelValue = config.openaiModel;
+                        break;
+                    case 'anthropic':
+                        currentModelValue = config.anthropicModel;
+                        break;
+                    case 'google':
+                        currentModelValue = config.googleModel;
+                        break;
+                    case 'openrouter':
+                        currentModelValue = config.openrouterModel;
+                        break;
+                    case 'custom':
+                        currentModelValue = config.customProviderModel;
+                        break;
+                    default:
+                        currentModelValue = 'unknown';
+                }
+                logger.debug(`Updating model setting ${settingKey} from ${currentModelValue} to ${modelName}`);
+                await vscode.workspace.getConfiguration('praxcode').update(settingKey, modelName, vscode.ConfigurationTarget.Workspace);
+                logger.info(`Updated model setting ${settingKey} to ${modelName} at workspace level`);
+
+                // Force reload the configuration to ensure we have the latest values
+                this._configManager.reloadConfiguration();
+                // Get the updated model value based on provider
+                const updatedConfig = this._configManager.getConfiguration();
+                let updatedModelValue = '';
+                switch (provider) {
+                    case 'ollama':
+                        updatedModelValue = updatedConfig.ollamaModel;
+                        break;
+                    case 'openai':
+                        updatedModelValue = updatedConfig.openaiModel;
+                        break;
+                    case 'anthropic':
+                        updatedModelValue = updatedConfig.anthropicModel;
+                        break;
+                    case 'google':
+                        updatedModelValue = updatedConfig.googleModel;
+                        break;
+                    case 'openrouter':
+                        updatedModelValue = updatedConfig.openrouterModel;
+                        break;
+                    case 'custom':
+                        updatedModelValue = updatedConfig.customProviderModel;
+                        break;
+                    default:
+                        updatedModelValue = 'unknown';
+                }
+                logger.debug(`Configuration reloaded after model change. New provider: ${updatedConfig.llmProvider}, New model: ${updatedModelValue}`);
             } catch (configError) {
                 logger.warn(`Failed to update at workspace level, falling back to memory-only: ${configError}`);
                 // If workspace update fails, we'll just keep the setting in memory for this session
                 // This avoids the file save dialog but won't persist the setting between sessions
             }
 
-            // We'll use a simpler approach - just create a new LLM service with the model
-            // This avoids TypeScript errors and still ensures the model is used for this session
-            logger.info(`Using model ${model} for current session`);
-
             // Store the model in memory for this session
             this._currentSessionModel = model;
 
             // Reset the LLM service to use the new model
+            logger.debug('Resetting LLM service to use the new model');
             this._llmServiceFactory.resetService();
 
             // Get the updated LLM service with the new model
+            logger.debug('Getting updated LLM service with the new model');
             const llmService = await this._llmServiceFactory.getService();
+            logger.debug(`New LLM service created: ${llmService.getName()}`);
 
-            // Try to get available models
-            let availableModels: string[] = [];
-            try {
-                availableModels = await llmService.getAvailableModels();
-                logger.info(`Retrieved ${availableModels.length} available models after model change`);
-            } catch (error) {
-                logger.warn('Could not fetch available models after model change', error);
-                // Continue even if we can't get models
-            }
+            // Reset the RAG orchestrator to use the new LLM service
+            logger.debug('Resetting RAG orchestrator to use the new LLM service');
+            this._ragOrchestrator = null;
+
+            // Get formatted model list
+            const formattedModels = await this._getFormattedModelList();
 
             // Update the UI with the new model and available models
             this._view.webview.postMessage({
                 command: 'setProviderInfo',
                 provider: {
-                    name: config.llmProvider,
+                    name: llmService.getName(),
                     model: model,
-                    availableModels: availableModels
+                    availableModels: formattedModels
                 }
             });
 
@@ -560,6 +790,44 @@ Always explain what you're doing and why. Be thorough but concise.`;
             this._handleGetProviderInfo().catch(e =>
                 logger.error('Failed to refresh provider info after model change error', e)
             );
+        }
+    }
+
+    /**
+     * Get a formatted list of all available models
+     * @returns A promise that resolves to an array of formatted model strings
+     */
+    private async _getFormattedModelList(): Promise<string[]> {
+        try {
+            // Get all available providers and their models
+            const allProviders = await this._llmServiceFactory.getAllProviders();
+
+            // Flatten all models into a single array with provider prefixes
+            const allModels: string[] = [];
+
+            // Add RAG-only option first
+            allModels.push('rag-only');
+
+            // Add all other models with provider prefixes
+            for (const provider of allProviders) {
+                if (provider.provider !== 'RAG-Only') {
+                    for (const model of provider.models) {
+                        // For Ollama models, ensure we don't double-format models that already have colons
+                        if (provider.provider.toLowerCase() === 'ollama') {
+                            // Just add the provider prefix
+                            allModels.push(`ollama:${model}`);
+                        } else {
+                            // For other providers, add the standard prefix
+                            allModels.push(`${provider.provider.toLowerCase()}:${model}`);
+                        }
+                    }
+                }
+            }
+
+            return allModels;
+        } catch (error) {
+            logger.error('Error getting formatted model list', error);
+            return ['rag-only', 'ollama:llama3'];
         }
     }
 
@@ -771,22 +1039,27 @@ Always explain what you're doing and why. Be thorough but concise.`;
             return this._currentSessionModel;
         }
 
-        // Otherwise use the model from config
+        // Check if RAG-only mode is enabled
+        if (config.llmProvider === 'none' || config.ragOnlyModeForceEnabled) {
+            return 'rag-only';
+        }
+
+        // Otherwise use the model from config with provider prefix
         switch (config.llmProvider) {
             case 'ollama':
-                return config.ollamaModel;
+                return `ollama:${config.ollamaModel}`;
             case 'openai':
-                return config.openaiModel;
+                return `openai:${config.openaiModel}`;
             case 'anthropic':
-                return config.anthropicModel;
+                return `anthropic:${config.anthropicModel}`;
             case 'google':
-                return config.googleModel;
+                return `google:${config.googleModel}`;
             case 'openrouter':
-                return config.openrouterModel;
+                return `openrouter:${config.openrouterModel}`;
             case 'custom':
-                return config.customProviderModel;
+                return `custom:${config.customProviderModel}`;
             default:
-                return 'default';
+                return 'rag-only';
         }
     }
 

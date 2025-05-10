@@ -14,17 +14,17 @@ import { MCPContextItem, MCPRequest, MCPResponse } from '../mcp/modelContextProt
  * This provider connects to an LLM server that supports the Model Context Protocol
  */
 export class MCPProvider implements LLMService {
-    private apiKey: string;
+    private apiKey: string | null;
     private model: string;
     private baseUrl: string;
 
     /**
      * Constructor
-     * @param apiKey The API key for the MCP provider
+     * @param apiKey The API key for the MCP provider (optional for some endpoints)
      * @param model The model to use
      * @param baseUrl The base URL for the MCP provider API
      */
-    constructor(apiKey: string, model: string = 'default', baseUrl: string = 'http://localhost:8000') {
+    constructor(apiKey: string | null = null, model: string = 'default', baseUrl: string = 'http://localhost:8000') {
         this.apiKey = apiKey;
         this.model = model;
         this.baseUrl = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
@@ -42,14 +42,19 @@ export class MCPProvider implements LLMService {
      */
     async getAvailableModels(): Promise<string[]> {
         try {
+            // Prepare headers
+            const headers: Record<string, string> = {
+                'Content-Type': 'application/json'
+            };
+
+            // Add Authorization header only if API key is provided
+            if (this.apiKey) {
+                headers['Authorization'] = `Bearer ${this.apiKey}`;
+            }
+
             const response = await axios.get(
                 `${this.baseUrl}/models`,
-                {
-                    headers: {
-                        'Authorization': `Bearer ${this.apiKey}`,
-                        'Content-Type': 'application/json'
-                    }
-                }
+                { headers }
             );
 
             return response.data.models || ['default'];
@@ -93,16 +98,21 @@ export class MCPProvider implements LLMService {
                 stream: false
             };
 
+            // Prepare headers
+            const headers: Record<string, string> = {
+                'Content-Type': 'application/json'
+            };
+
+            // Add Authorization header only if API key is provided
+            if (this.apiKey) {
+                headers['Authorization'] = `Bearer ${this.apiKey}`;
+            }
+
             // Make the API request
             const response = await axios.post(
                 `${this.baseUrl}/chat/completions`,
                 mcpRequest,
-                {
-                    headers: {
-                        'Authorization': `Bearer ${this.apiKey}`,
-                        'Content-Type': 'application/json'
-                    }
-                }
+                { headers }
             );
 
             const data = response.data as MCPResponse;
@@ -171,15 +181,22 @@ export class MCPProvider implements LLMService {
                 stream: true
             };
 
+            // Prepare headers
+            const headers: Record<string, string> = {
+                'Content-Type': 'application/json'
+            };
+
+            // Add Authorization header only if API key is provided
+            if (this.apiKey) {
+                headers['Authorization'] = `Bearer ${this.apiKey}`;
+            }
+
             // Make the API request
             const response = await axios.post(
                 `${this.baseUrl}/chat/completions`,
                 mcpRequest,
                 {
-                    headers: {
-                        'Authorization': `Bearer ${this.apiKey}`,
-                        'Content-Type': 'application/json'
-                    },
+                    headers,
                     responseType: 'stream'
                 }
             );

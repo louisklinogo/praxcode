@@ -71,6 +71,9 @@ export class RAGOrchestrator {
     public async shouldUseRagOnlyMode(options?: RAGOptions): Promise<boolean> {
         try {
             const config = this.configManager.getConfiguration();
+            logger.debug(`Checking if RAG-only mode should be used. Current provider: ${config.llmProvider}, model: ${config.llmProvider === 'ollama' ? config.ollamaModel : 'n/a'}`);
+            logger.debug(`RAG-only mode enabled: ${config.ragOnlyModeEnabled}, forced: ${config.ragOnlyModeForceEnabled}`);
+            logger.debug(`Options: ${JSON.stringify(options)}`);
 
             // Check if RAG-only mode is explicitly forced in options
             if (options?.forceRagOnlyMode) {
@@ -84,15 +87,36 @@ export class RAGOrchestrator {
                 return true;
             }
 
-            // Check if RAG-only mode is enabled and LLM is not available
+            // Check if provider is explicitly set to "none"
+            if (config.llmProvider === 'none') {
+                logger.debug('LLM provider is set to "none", using RAG-only mode');
+                return true;
+            }
+
+            // IMPORTANT: For Ollama, we NEVER use RAG-only mode unless explicitly forced
+            // This allows users to select Ollama models even if Ollama isn't currently running
+            if (config.llmProvider === 'ollama') {
+                logger.debug(`Ollama provider selected (model: ${config.ollamaModel}), NEVER using RAG-only mode`);
+
+                // Log the current LLM service to help diagnose issues
+                logger.debug(`Current LLM service: ${this.llmService.getName()}`);
+
+                // Always return false for Ollama to ensure we try to use it
+                // The Ollama provider will handle connection errors gracefully
+                return false;
+            }
+
+            // For other providers, check if RAG-only mode is enabled and LLM is not available
             if (config.ragOnlyModeEnabled) {
                 const llmAvailable = await this.llmAvailabilityService.isLLMAvailable();
+                logger.debug(`LLM availability check result: ${llmAvailable}`);
                 if (!llmAvailable) {
                     logger.debug('RAG-only mode enabled and LLM is not available');
                     return true;
                 }
             }
 
+            logger.debug('Using LLM for query (not in RAG-only mode)');
             return false;
         } catch (error) {
             logger.error('Error checking if RAG-only mode should be used', error);
@@ -243,6 +267,12 @@ export class RAGOrchestrator {
         try {
             logger.debug(`Starting RAG query: "${query.substring(0, 100)}..."`);
 
+            // Log the current LLM service and configuration
+            const config = this.configManager.getConfiguration();
+            logger.debug(`Current LLM provider: ${config.llmProvider}, model: ${config.llmProvider === 'ollama' ? config.ollamaModel : 'n/a'}`);
+            logger.debug(`Current LLM service: ${this.llmService.getName()}`);
+            logger.debug(`RAG options: ${JSON.stringify(options)}`);
+
             // Check if the query is empty
             if (!query.trim()) {
                 callback("Please provide a query to search for relevant code.", true);
@@ -251,6 +281,7 @@ export class RAGOrchestrator {
 
             // Check if we should use RAG-only mode
             const useRagOnlyMode = await this.shouldUseRagOnlyMode(options);
+            logger.debug(`Should use RAG-only mode: ${useRagOnlyMode}`);
             if (useRagOnlyMode) {
                 logger.info('Using RAG-only mode for query');
 
@@ -280,7 +311,39 @@ No code snippets with sufficient relevance were found in the indexed codebase. T
                     }
 
                     // Format the results as a response with better context
-                    let response = "No LLM available. Showing relevant codebase context for your query: **" + query + "**\n\n";
+                    let response = "";
+
+                    // Check the provider type to give a more specific message
+                    const config = this.configManager.getConfiguration();
+                    if (config.llmProvider === 'ollama') {
+                        // For Ollama, we'll try to use it even if it's not currently available
+                        // But we'll still show a warning if we're in RAG-only mode
+                        try {
+                            // Try to connect to Ollama to see if it's running
+                            const ollamaAvailable = await this.llmAvailabilityService.isLLMAvailable();
+                            if (!ollamaAvailable) {
+                                response = "## ⚠️ Ollama Connection Error\n\n";
+                                response += "Cannot connect to Ollama at " + config.ollamaUrl + "\n\n";
+                                response += "Please make sure:\n";
+                                response += "1. Ollama is installed and running\n";
+                                response += "2. The URL in settings is correct\n";
+                                response += "3. No firewall is blocking the connection\n\n";
+                                response += "Showing relevant codebase context for your query: **" + query + "**\n\n";
+                            } else {
+                                // This shouldn't happen since we're in RAG-only mode
+                                response = "RAG-Only mode is active. Showing relevant codebase context for your query: **" + query + "**\n\n";
+                            }
+                        } catch (error) {
+                            // If we can't even check availability, just show a generic message
+                            response = "## ⚠️ Ollama Connection Error\n\n";
+                            response += "Error connecting to Ollama. Please make sure Ollama is running.\n\n";
+                            response += "Showing relevant codebase context for your query: **" + query + "**\n\n";
+                        }
+                    } else if (config.llmProvider === 'none') {
+                        response = "RAG-Only mode is active. Showing relevant codebase context for your query: **" + query + "**\n\n";
+                    } else {
+                        response = "No LLM available. Showing relevant codebase context for your query: **" + query + "**\n\n";
+                    }
 
                     // Add explanation about what the user is seeing
                     response += "The following code snippets were found based on semantic similarity to your query. ";
@@ -431,33 +494,54 @@ No code snippets with sufficient relevance were found in the indexed codebase. T
                     stream: true
                 };
 
-                await this.llmService.streamChat(
-                    messages,
-                    (response) => {
-                        callback(response.content, response.done);
+                try {
+                    // Check if we're using Ollama and log additional information
+                    const config = this.configManager.getConfiguration();
+                    if (config.llmProvider === 'ollama') {
+                        logger.debug(`Using Ollama provider with model: ${config.ollamaModel}`);
+                        logger.debug(`Ollama URL: ${config.ollamaUrl}`);
+                        logger.debug(`LLM service name: ${this.llmService.getName()}`);
+                    }
 
-                        // Process any context items in the response if needed
-                        if (response.contextItems && response.contextItems.length > 0) {
-                            logger.debug(`Received ${response.contextItems.length} context items in response`);
+                    await this.llmService.streamChat(
+                        messages,
+                        (response) => {
+                            callback(response.content, response.done);
 
-                            // Process actions from context items
-                            this.mcpActionHandler.processContextItems(response.contextItems)
-                                .then(actionsProcessed => {
-                                    if (actionsProcessed) {
-                                        logger.info('Processed actions from MCP response');
-                                    }
-                                })
-                                .catch(error => {
-                                    logger.error('Error processing MCP actions', error);
-                                });
-                        }
+                            // Process any context items in the response if needed
+                            if (response.contextItems && response.contextItems.length > 0) {
+                                logger.debug(`Received ${response.contextItems.length} context items in response`);
 
-                        if (response.done) {
-                            logger.debug("Completed streaming response from LLM with MCP");
-                        }
-                    },
-                    chatOptions
-                );
+                                // Process actions from context items
+                                this.mcpActionHandler.processContextItems(response.contextItems)
+                                    .then(actionsProcessed => {
+                                        if (actionsProcessed) {
+                                            logger.info('Processed actions from MCP response');
+                                        }
+                                    })
+                                    .catch(error => {
+                                        logger.error('Error processing MCP actions', error);
+                                    });
+                            }
+
+                            if (response.done) {
+                                logger.debug("Completed streaming response from LLM with MCP");
+                            }
+                        },
+                        chatOptions
+                    );
+                } catch (streamError) {
+                    logger.error('Error streaming chat with MCP', streamError);
+
+                    // Check if we're using Ollama and provide a more helpful error message
+                    const config = this.configManager.getConfiguration();
+                    if (config.llmProvider === 'ollama') {
+                        logger.error(`Ollama error: ${streamError instanceof Error ? streamError.message : String(streamError)}`);
+                        callback(`## ⚠️ Ollama Connection Error\n\nCannot connect to Ollama at ${config.ollamaUrl}.\n\nPlease make sure:\n1. Ollama is installed and running\n2. The URL in settings is correct (${config.ollamaUrl})\n3. The model "${config.ollamaModel}" is available (run \`ollama pull ${config.ollamaModel}\`)\n\nError details: ${streamError instanceof Error ? streamError.message : String(streamError)}`, true);
+                    } else {
+                        callback(`Error streaming response: ${streamError instanceof Error ? streamError.message : String(streamError)}`, true);
+                    }
+                }
             } else {
                 // Use traditional text-based approach
                 // Assemble the prompt
@@ -471,20 +555,49 @@ No code snippets with sufficient relevance were found in the indexed codebase. T
 
                 // Stream the response from the LLM
                 logger.debug("Streaming response from LLM");
-                await this.llmService.streamChat(
-                    messages,
-                    (response) => {
-                        callback(response.content, response.done);
-
-                        if (response.done) {
-                            logger.debug("Completed streaming response from LLM");
-                        }
+                try {
+                    // Check if we're using Ollama and log additional information
+                    const config = this.configManager.getConfiguration();
+                    if (config.llmProvider === 'ollama') {
+                        logger.debug(`Using Ollama provider with model: ${config.ollamaModel}`);
+                        logger.debug(`Ollama URL: ${config.ollamaUrl}`);
+                        logger.debug(`LLM service name: ${this.llmService.getName()}`);
                     }
-                );
+
+                    await this.llmService.streamChat(
+                        messages,
+                        (response) => {
+                            callback(response.content, response.done);
+
+                            if (response.done) {
+                                logger.debug("Completed streaming response from LLM");
+                            }
+                        }
+                    );
+                } catch (streamError) {
+                    logger.error('Error streaming chat', streamError);
+
+                    // Check if we're using Ollama and provide a more helpful error message
+                    const config = this.configManager.getConfiguration();
+                    if (config.llmProvider === 'ollama') {
+                        logger.error(`Ollama error: ${streamError instanceof Error ? streamError.message : String(streamError)}`);
+                        callback(`## ⚠️ Ollama Connection Error\n\nCannot connect to Ollama at ${config.ollamaUrl}.\n\nPlease make sure:\n1. Ollama is installed and running\n2. The URL in settings is correct (${config.ollamaUrl})\n3. The model "${config.ollamaModel}" is available (run \`ollama pull ${config.ollamaModel}\`)\n\nError details: ${streamError instanceof Error ? streamError.message : String(streamError)}`, true);
+                    } else {
+                        callback(`Error streaming response: ${streamError instanceof Error ? streamError.message : String(streamError)}`, true);
+                    }
+                }
             }
         } catch (error) {
             logger.error('Failed to stream query with RAG', error);
-            callback(`I encountered an error while processing your request: ${error instanceof Error ? error.message : String(error)}. Please try again or check the logs for more details.`, true);
+
+            // Check if we're using Ollama and provide a more helpful error message
+            const config = this.configManager.getConfiguration();
+            if (config.llmProvider === 'ollama') {
+                logger.error(`Ollama error: ${error instanceof Error ? error.message : String(error)}`);
+                callback(`## ⚠️ Ollama Connection Error\n\nCannot connect to Ollama at ${config.ollamaUrl}.\n\nPlease make sure:\n1. Ollama is installed and running\n2. The URL in settings is correct (${config.ollamaUrl})\n3. The model "${config.ollamaModel}" is available (run \`ollama pull ${config.ollamaModel}\`)\n\nError details: ${error instanceof Error ? error.message : String(error)}`, true);
+            } else {
+                callback(`I encountered an error while processing your request: ${error instanceof Error ? error.message : String(error)}. Please try again or check the logs for more details.`, true);
+            }
         }
     }
 

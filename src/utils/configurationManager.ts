@@ -203,4 +203,33 @@ export class ConfigurationManager {
             throw error;
         }
     }
+
+    /**
+     * Set a secret in the secret storage
+     * @param key The key to store
+     * @param value The value to store
+     */
+    public async setSecret(key: string, value: string): Promise<void> {
+        try {
+            await this.secretStorage.store(key, value);
+            logger.debug(`Secret stored: ${key}`);
+        } catch (error) {
+            logger.error(`Failed to store secret: ${key}`, error);
+            throw error;
+        }
+    }
+
+    /**
+     * Force reload the configuration from VS Code settings
+     * This is useful when settings have been updated programmatically
+     * and we need to ensure we have the latest values
+     */
+    public reloadConfiguration(): void {
+        // VS Code's getConfiguration() always returns the latest values,
+        // so we don't need to do anything special here.
+        // Just log that we're reloading for debugging purposes.
+        logger.debug('Reloading configuration from VS Code settings');
+        const config = this.getConfiguration();
+        logger.debug(`Current LLM provider: ${config.llmProvider}`);
+    }
 }

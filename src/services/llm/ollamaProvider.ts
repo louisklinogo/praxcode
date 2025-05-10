@@ -64,24 +64,42 @@ export class OllamaProvider implements LLMService {
      */
     async getAvailableModels(): Promise<string[]> {
         try {
-            // First check if Ollama is running by making a simple request
-            await axios.get(`${this.baseUrl}/api/version`, { timeout: 2000 });
+            logger.debug(`Checking if Ollama is running at ${this.baseUrl}`);
 
-            const response = await axios.get(`${this.baseUrl}/api/tags`);
-            if (response.data && response.data.models) {
-                return response.data.models.map((model: any) => model.name);
+            // First check if Ollama is running by making a simple request
+            try {
+                const versionResponse = await axios.get(`${this.baseUrl}/api/version`, { timeout: 2000 });
+                logger.debug(`Ollama is running. Version: ${JSON.stringify(versionResponse.data)}`);
+            } catch (versionError) {
+                logger.warn(`Failed to get Ollama version: ${versionError instanceof Error ? versionError.message : String(versionError)}`);
+                // Continue anyway to try getting the models
             }
+
+            logger.debug(`Fetching available models from Ollama at ${this.baseUrl}/api/tags`);
+            const response = await axios.get(`${this.baseUrl}/api/tags`);
+
+            if (response.data && response.data.models) {
+                const models = response.data.models.map((model: any) => model.name);
+                logger.debug(`Found ${models.length} Ollama models: ${models.join(', ')}`);
+                return models;
+            }
+
+            logger.warn('No models found in Ollama response');
             return [];
         } catch (error) {
             logger.error('Failed to get available models from Ollama', error);
 
             // Provide a more user-friendly error message
             if (axios.isAxiosError(error) && error.code === 'ECONNREFUSED') {
+                logger.error(`Cannot connect to Ollama at ${this.baseUrl}. Please make sure Ollama is running.`);
                 throw new Error(`Cannot connect to Ollama at ${this.baseUrl}. Please make sure Ollama is running.`);
             } else if (axios.isAxiosError(error) && error.response?.status === 404) {
+                logger.error(`Ollama API endpoint not found at ${this.baseUrl}/api/tags`);
                 throw new Error(`Ollama API endpoint not found. Please check your Ollama installation and URL (${this.baseUrl}).`);
             } else {
-                throw new Error(`Failed to get available models: ${error instanceof Error ? error.message : String(error)}`);
+                const errorMessage = error instanceof Error ? error.message : String(error);
+                logger.error(`Unknown error getting Ollama models: ${errorMessage}`);
+                throw new Error(`Failed to get available models: ${errorMessage}`);
             }
         }
     }
@@ -172,14 +190,21 @@ export class OllamaProvider implements LLMService {
             // Provide more user-friendly error messages
             if (axios.isAxiosError(error)) {
                 if (error.code === 'ECONNREFUSED') {
-                    throw new Error(`Cannot connect to Ollama at ${this.baseUrl}. Please make sure Ollama is running.`);
+                    logger.error(`Cannot connect to Ollama at ${this.baseUrl}. Connection refused.`);
+                    throw new Error(`Cannot connect to Ollama at ${this.baseUrl}. Please make sure Ollama is installed and running.`);
+                } else if (error.code === 'ETIMEDOUT') {
+                    logger.error(`Connection to Ollama at ${this.baseUrl} timed out.`);
+                    throw new Error(`Connection to Ollama at ${this.baseUrl} timed out. Please make sure Ollama is running and responsive.`);
                 } else if (error.response?.status === 404) {
                     if (error.config?.url?.includes('/api/chat')) {
+                        logger.error(`Model "${this.model}" not found in Ollama.`);
                         throw new Error(`Model "${this.model}" not found. Please make sure you have pulled this model with "ollama pull ${this.model}".`);
                     } else {
+                        logger.error(`Ollama API endpoint not found at ${this.baseUrl}`);
                         throw new Error(`Ollama API endpoint not found. Please check your Ollama installation and URL (${this.baseUrl}).`);
                     }
                 } else if (error.response?.status === 500) {
+                    logger.error(`Ollama server error: ${error.message}`);
                     throw new Error(`Ollama server error. Please check the Ollama logs for more details.`);
                 }
             }
@@ -202,25 +227,40 @@ export class OllamaProvider implements LLMService {
         try {
             // Check if Ollama is running first
             try {
-                await axios.get(`${this.baseUrl}/api/version`, { timeout: 2000 });
+                logger.debug(`Checking if Ollama is running at ${this.baseUrl}/api/version before streaming chat`);
+                await axios.get(`${this.baseUrl}/api/version`, {
+                    timeout: 5000,  // Increased timeout for slower connections
+                    validateStatus: (status) => status < 500 // Accept any status code less than 500
+                });
+                logger.debug('Ollama is running, proceeding with chat request');
             } catch (connError) {
                 if (axios.isAxiosError(connError)) {
                     if (connError.code === 'ECONNREFUSED') {
+                        logger.error(`Cannot connect to Ollama at ${this.baseUrl}. Connection refused.`);
                         callback({
-                            content: `Cannot connect to Ollama at ${this.baseUrl}. Please make sure Ollama is running.`,
+                            content: `## ⚠️ Ollama Connection Error\n\nCannot connect to Ollama at ${this.baseUrl}.\n\nPlease make sure:\n1. Ollama is installed and running\n2. The URL in settings is correct\n3. No firewall is blocking the connection\n\nTry running Ollama and then send your message again.`,
+                            done: true
+                        });
+                        return;
+                    } else if (connError.code === 'ETIMEDOUT') {
+                        logger.error(`Connection to Ollama at ${this.baseUrl} timed out.`);
+                        callback({
+                            content: `## ⚠️ Ollama Connection Timeout\n\nConnection to Ollama at ${this.baseUrl} timed out.\n\nPlease make sure:\n1. Ollama is running and responsive\n2. Your network connection is stable\n\nTry restarting Ollama and then send your message again.`,
                             done: true
                         });
                         return;
                     } else if (connError.response?.status === 404) {
+                        logger.error(`Ollama API endpoint not found at ${this.baseUrl}/api/version`);
                         callback({
-                            content: `Ollama API endpoint not found. Please check your Ollama installation and URL (${this.baseUrl}).`,
+                            content: `## ⚠️ Ollama API Not Found\n\nOllama API endpoint not found at ${this.baseUrl}.\n\nPlease check:\n1. Your Ollama installation is up to date\n2. The URL in settings is correct\n\nThe correct URL is usually http://localhost:11434`,
                             done: true
                         });
                         return;
                     }
                 }
+                logger.error(`Error connecting to Ollama: ${connError instanceof Error ? connError.message : String(connError)}`);
                 callback({
-                    content: `Error connecting to Ollama: ${connError instanceof Error ? connError.message : String(connError)}`,
+                    content: `## ⚠️ Ollama Connection Error\n\nError connecting to Ollama: ${connError instanceof Error ? connError.message : String(connError)}\n\nPlease check that Ollama is running and try again.`,
                     done: true
                 });
                 return;
@@ -367,36 +407,48 @@ export class OllamaProvider implements LLMService {
             // Provide more user-friendly error messages
             if (axios.isAxiosError(error)) {
                 if (error.code === 'ECONNREFUSED') {
+                    logger.error(`Cannot connect to Ollama at ${this.baseUrl}. Connection refused.`);
                     callback({
-                        content: `Cannot connect to Ollama at ${this.baseUrl}. Please make sure Ollama is running.`,
+                        content: `## ⚠️ Ollama Connection Error\n\nCannot connect to Ollama at ${this.baseUrl}.\n\nPlease make sure:\n1. Ollama is installed and running\n2. The URL in settings is correct\n3. No firewall is blocking the connection\n\nTry running Ollama and then send your message again.`,
+                        done: true
+                    });
+                } else if (error.code === 'ETIMEDOUT') {
+                    logger.error(`Connection to Ollama at ${this.baseUrl} timed out.`);
+                    callback({
+                        content: `## ⚠️ Ollama Connection Timeout\n\nConnection to Ollama at ${this.baseUrl} timed out.\n\nPlease make sure:\n1. Ollama is running and responsive\n2. Your network connection is stable\n\nTry restarting Ollama and then send your message again.`,
                         done: true
                     });
                 } else if (error.response?.status === 404) {
                     if (error.config?.url?.includes('/api/chat')) {
+                        logger.error(`Model "${this.model}" not found in Ollama.`);
                         callback({
-                            content: `Model "${this.model}" not found. Please make sure you have pulled this model with "ollama pull ${this.model}".`,
+                            content: `## ⚠️ Model Not Found\n\nModel "${this.model}" not found in Ollama.\n\nPlease pull the model first by running this command in your terminal:\n\n\`\`\`\nollama pull ${this.model}\n\`\`\`\n\nThen try again.`,
                             done: true
                         });
                     } else {
+                        logger.error(`Ollama API endpoint not found at ${this.baseUrl}`);
                         callback({
-                            content: `Ollama API endpoint not found. Please check your Ollama installation and URL (${this.baseUrl}).`,
+                            content: `## ⚠️ Ollama API Not Found\n\nOllama API endpoint not found at ${this.baseUrl}.\n\nPlease check:\n1. Your Ollama installation is up to date\n2. The URL in settings is correct\n\nThe correct URL is usually http://localhost:11434`,
                             done: true
                         });
                     }
                 } else if (error.response?.status === 500) {
+                    logger.error(`Ollama server error: ${error.message}`);
                     callback({
-                        content: `Ollama server error. Please check the Ollama logs for more details.`,
+                        content: `## ⚠️ Ollama Server Error\n\nOllama server returned an error.\n\nPlease check:\n1. The Ollama logs for more details\n2. That you have enough disk space and memory\n3. That the model is properly installed\n\nTry restarting Ollama and then send your message again.`,
                         done: true
                     });
                 } else {
+                    logger.error(`Ollama error: ${error.message || 'Unknown error'}`);
                     callback({
-                        content: `Error: ${error.message || 'Unknown error'}`,
+                        content: `## ⚠️ Ollama Error\n\nError: ${error.message || 'Unknown error'}\n\nPlease check that Ollama is running properly and try again.`,
                         done: true
                     });
                 }
             } else {
+                logger.error(`Non-Axios error: ${error instanceof Error ? error.message : String(error)}`);
                 callback({
-                    content: `Error: ${error instanceof Error ? error.message : String(error)}`,
+                    content: `## ⚠️ Error\n\nAn unexpected error occurred: ${error instanceof Error ? error.message : String(error)}\n\nPlease check that Ollama is running properly and try again.`,
                     done: true
                 });
             }

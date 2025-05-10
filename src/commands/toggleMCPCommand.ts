@@ -46,12 +46,15 @@ export class ToggleMCPCommand {
             // Show a message to the user
             if (newValue) {
                 vscode.window.showInformationMessage('Model Context Protocol (MCP) support has been enabled.');
-                
+
+                // Get the updated configuration
+                const updatedConfig = this.configManager.getConfiguration();
+
                 // If enabled, prompt for endpoint URL and model if not already set
-                if (!config.mcpEndpointUrl || config.mcpEndpointUrl === 'http://localhost:8000') {
+                if (!updatedConfig.mcpEndpointUrl || updatedConfig.mcpEndpointUrl === 'http://localhost:8000') {
                     const endpointUrl = await vscode.window.showInputBox({
                         prompt: 'Enter the URL for the MCP-compatible endpoint',
-                        value: config.mcpEndpointUrl || 'http://localhost:8000',
+                        value: updatedConfig.mcpEndpointUrl || 'http://localhost:8000',
                         placeHolder: 'http://localhost:8000'
                     });
 
@@ -60,10 +63,10 @@ export class ToggleMCPCommand {
                     }
                 }
 
-                if (!config.mcpEndpointModel || config.mcpEndpointModel === 'default') {
+                if (!updatedConfig.mcpEndpointModel || updatedConfig.mcpEndpointModel === 'default') {
                     const model = await vscode.window.showInputBox({
                         prompt: 'Enter the model to use with the MCP-compatible endpoint',
-                        value: config.mcpEndpointModel || 'default',
+                        value: updatedConfig.mcpEndpointModel || 'default',
                         placeHolder: 'default'
                     });
 
@@ -72,17 +75,23 @@ export class ToggleMCPCommand {
                     }
                 }
 
-                // Check if API key is set
-                const apiKey = await this.configManager.getSecret('mcp.apiKey');
-                if (!apiKey) {
-                    const key = await vscode.window.showInputBox({
-                        prompt: 'Enter the API key for the MCP-compatible endpoint',
-                        password: true
-                    });
+                // Check if we need an API key (not needed for Ollama)
+                if (updatedConfig.llmProvider !== 'ollama') {
+                    // For non-Ollama providers, we need an API key
+                    const apiKey = await this.configManager.getSecret('mcp.apiKey');
+                    if (!apiKey) {
+                        const key = await vscode.window.showInputBox({
+                            prompt: 'Enter the API key for the MCP-compatible endpoint',
+                            password: true
+                        });
 
-                    if (key) {
-                        await this.configManager.storeSecret('mcp.apiKey', key);
+                        if (key) {
+                            await this.configManager.storeSecret('mcp.apiKey', key);
+                        }
                     }
+                } else {
+                    // For Ollama, inform the user that no API key is needed
+                    vscode.window.showInformationMessage('No API key needed for Ollama with MCP.');
                 }
             } else {
                 vscode.window.showInformationMessage('Model Context Protocol (MCP) support has been disabled.');
