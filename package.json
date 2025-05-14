@@ -2,7 +2,7 @@
   "name": "praxcode",
   "displayName": "PraxCode - AI Code Assistant",
   "description": "Highly flexible and context-aware AI code assistant for Visual Studio Code, empowering developers with a choice of LLMs (local, cloud APIs, routing services) and leveraging local vector indexing for deep codebase understanding, rivaling the capabilities of leading AI coding tools.",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "publisher": "praxai",
   "icon": "resources/praxcode-icon-128.png",
   "repository": {

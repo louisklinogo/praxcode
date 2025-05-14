@@ -56,3 +56,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added support for caching generated commit messages
 - Added support for caching generated refactoring suggestions
 - Added support for caching generated inline code completions
+
+## [0.1.4] - 2025-05-14
+
+### Added
+Created a proper directory structure for the images:
+Moved the screenshots to resources/images/ directory
+Saved the actual screenshot content to these files (replacing the placeholder files)
+Updated all image references in the README.md file:
+Changed all image paths from images/screenshot-X.png to resources/images/screenshot-X.png
+This ensures that the images are properly referenced from their new location
+Added additional support for GitHub viewing:
+Ensured consistency with the extension icon:
+All assets are now in the resources directory, following VS Code's conventions
