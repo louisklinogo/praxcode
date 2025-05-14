@@ -2,8 +2,9 @@
   "name": "praxcode",
   "displayName": "PraxCode - AI Code Assistant",
   "description": "Highly flexible and context-aware AI code assistant for Visual Studio Code, empowering developers with a choice of LLMs (local, cloud APIs, routing services) and leveraging local vector indexing for deep codebase understanding, rivaling the capabilities of leading AI coding tools.",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "publisher": "praxai",
+  "icon": "images/praxcode-icon.png",
   "repository": {
     "type": "git",
     "url": "https://github.com/spockstein/praxcode.git"
@@ -144,7 +145,7 @@
         {
           "id": "praxcode-sidebar",
           "title": "PraxCode",
-          "icon": "$(comment-discussion)"
+          "icon": "images/praxcode-icon.png"
         }
       ]
     },
@@ -154,7 +155,7 @@
           "type": "webview",
           "id": "praxcode.sidebarChatView",
           "name": "PraxCode Chat",
-          "icon": "$(comment-discussion)"
+          "icon": "images/praxcode-icon.png"
         }
       ]
     },

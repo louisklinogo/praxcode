@@ -320,18 +320,11 @@ Always explain what you're doing and why. Be thorough but concise.`;
                 // If model is specified, log that we're using a different model
                 if (model) {
                     // Parse the model string if it's in the new format (provider:model)
-                    let modelName = model;
                     if (model.includes(':')) {
                         // Handle special case for Ollama models that may contain colons
-                        if (model.startsWith('ollama:')) {
-                            modelName = model.substring('ollama:'.length);
-                        } else {
-                            // For other providers, split by the first colon
-                            const firstColonIndex = model.indexOf(':');
-                            if (firstColonIndex !== -1) {
-                                modelName = model.substring(firstColonIndex + 1);
-                            }
-                        }
+                        // Just log the model, no need to store it in a variable
+                        logger.debug(`Using model: ${model}`);
+                        // We don't need to extract the model name here
                     }
 
                     const config = this._configManager.getConfiguration();
@@ -1330,7 +1323,64 @@ Always explain what you're doing and why. Be thorough but concise.`;
                     background-color: var(--vscode-editor-background);
                     position: sticky;
                     bottom: 0;
-                    padding: 8px;
+                    padding: 0;
+                }
+
+                .toolbar {
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    padding: 8px 12px;
+                    background-color: var(--vscode-editor-background);
+                    border-bottom: 1px solid var(--vscode-panel-border);
+                }
+
+                .toolbar-left {
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                }
+
+                .toolbar-right {
+                    display: flex;
+                    align-items: center;
+                }
+
+                .toolbar-button {
+                    display: flex;
+                    align-items: center;
+                    background: transparent;
+                    border: none;
+                    color: var(--vscode-foreground);
+                    padding: 4px 8px;
+                    cursor: pointer;
+                    font-size: 12px;
+                    opacity: 0.8;
+                    border-radius: 3px;
+                }
+
+                .toolbar-button:hover {
+                    background-color: var(--vscode-toolbar-hoverBackground);
+                    opacity: 1;
+                }
+
+                .toolbar-button.active {
+                    background-color: var(--vscode-button-background);
+                    color: var(--vscode-button-foreground);
+                    opacity: 1;
+                }
+
+                .toolbar-button span {
+                    margin-right: 4px;
+                }
+
+                .toolbar-button .codicon {
+                    font-size: 14px;
+                }
+
+                .toolbar-button .codicon-chevron-down {
+                    font-size: 12px;
+                    margin-left: 2px;
                 }
 
                 .input-container {
@@ -1342,12 +1392,14 @@ Always explain what you're doing and why. Be thorough but concise.`;
 
                 .input-row {
                     display: flex;
-                    margin-bottom: 6px;
                     align-items: center;
-                    background-color: var(--vscode-input-background);
-                    border: 1px solid var(--vscode-input-border);
-                    border-radius: 3px;
-                    padding: 2px;
+                    background-color: #2D2D2D; /* Dark background to match theme */
+                    border: 1px solid #3D3D3D; /* Slightly lighter border */
+                    border-radius: 4px;
+                    padding: 6px 8px;
+                    min-height: 44px;
+                    margin: 10px;
+                    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
                 }
 
                 .model-controls {
@@ -1359,12 +1411,11 @@ Always explain what you're doing and why. Be thorough but concise.`;
                 .model-selector {
                     display: flex;
                     align-items: center;
-                    background-color: var(--vscode-dropdown-background);
-                    border: 1px solid var(--vscode-dropdown-border);
-                    border-radius: 3px;
-                    padding: 0 4px;
-                    height: 22px;
-                    min-width: 140px;
+                    background-color: transparent;
+                    padding: 0;
+                    height: 28px;
+                    min-width: 180px;
+                    position: relative;
                 }
 
                 .toggle-controls {
@@ -1374,17 +1425,28 @@ Always explain what you're doing and why. Be thorough but concise.`;
                 }
 
                 .model-dropdown {
-                    background: transparent;
-                    border: none;
-                    color: var(--vscode-foreground);
+                    background-color: var(--vscode-dropdown-background);
+                    border: 1px solid var(--vscode-dropdown-border);
+                    color: var(--vscode-dropdown-foreground);
                     font-size: 0.85em;
-                    padding: 0 4px;
+                    padding: 4px 8px;
                     cursor: pointer;
                     outline: none;
-                    height: 22px;
-                    min-width: 120px;
+                    height: 28px;
+                    min-width: 180px;
                     width: 100%;
                     text-transform: lowercase;
+                    border-radius: 3px;
+                }
+
+                .model-dropdown:hover {
+                    border-color: var(--vscode-focusBorder);
+                }
+
+                .model-dropdown option {
+                    background-color: var(--vscode-dropdown-background);
+                    color: var(--vscode-dropdown-foreground);
+                    padding: 8px;
                 }
 
                 .toggle-button {
@@ -1424,16 +1486,16 @@ Always explain what you're doing and why. Be thorough but concise.`;
 
                 #message-input {
                     flex: 1;
-                    padding: 4px 8px;
+                    padding: 8px 12px;
                     border: none;
                     background-color: transparent;
                     color: var(--vscode-input-foreground);
                     resize: none;
-                    min-height: 22px;
-                    max-height: 100px;
+                    min-height: 36px;
+                    max-height: 120px;
                     font-family: var(--vscode-font-family);
                     font-size: var(--vscode-font-size);
-                    line-height: 1.4;
+                    line-height: 1.5;
                     overflow-y: auto;
                 }
 
@@ -1442,22 +1504,33 @@ Always explain what you're doing and why. Be thorough but concise.`;
                 }
 
                 #send-button {
-                    background-color: transparent;
-                    color: var(--vscode-descriptionForeground);
+                    background-color: #2D2D2D; /* Dark background to make it visible */
                     border: none;
-                    padding: 4px;
+                    padding: 6px;
                     cursor: pointer;
-                    font-size: 0.9em;
-                    transition: color 0.2s;
+                    transition: all 0.2s;
                     border-radius: 3px;
                     display: flex;
                     align-items: center;
                     justify-content: center;
                     margin-right: 2px;
+                    width: 32px;
+                    height: 32px;
+                    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+                }
+
+                #send-button img {
+                    width: 20px;
+                    height: 20px;
+                    transition: transform 0.2s;
                 }
 
                 #send-button:hover {
-                    color: var(--vscode-button-foreground);
+                    background-color: #3D3D3D; /* Lighter background on hover */
+                }
+
+                #send-button:hover img {
+                    transform: scale(1.1);
                 }
 
                 .input-right-actions {
@@ -1567,22 +1640,40 @@ Always explain what you're doing and why. Be thorough but concise.`;
 
             <div class="input-area">
                 <div class="input-container">
+                    <div class="toolbar">
+                        <div class="toolbar-left">
+                            <button class="toolbar-button" id="agent-button" title="Agent mode">
+                                <span class="codicon codicon-hubot"></span>
+                                <span>Agent</span>
+                                <span class="codicon codicon-chevron-down"></span>
+                            </button>
+                            <button class="toolbar-button" id="format-button" title="Format options">
+                                <span class="codicon codicon-edit"></span>
+                            </button>
+                            <button class="toolbar-button" id="at-button" title="Mention">
+                                <span class="codicon codicon-mention"></span>
+                            </button>
+                        </div>
+                        <div class="toolbar-right">
+                            <div class="model-selector">
+                                <select id="model-select" class="model-dropdown">
+                                    <option value="loading">Loading models...</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
                     <div class="input-row">
                         <textarea id="message-input" placeholder="Ask PraxCode..." rows="1"></textarea>
-                        <button id="send-button" title="Send message"><span class="codicon codicon-arrow-up"></span></button>
+                        <button id="send-button" title="Send message" class="send-button-orange">
+                            <img src="${_webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'send-icon.svg'))}" width="20" height="20" alt="Send" />
+                        </button>
                     </div>
-                    <div class="model-controls">
-                        <div class="model-selector">
-                            <select id="model-select" class="model-dropdown">
-                                <option value="loading">Loading models...</option>
-                            </select>
-                        </div>
-                        <div class="toggle-controls">
-                            <button class="toggle-button" id="agent-mode-off" data-mode="off">Agent</button>
-                            <button class="toggle-button active" id="agent-mode-auto" data-mode="auto">Agent</button>
-                            <button class="toggle-button active" id="mcp-off" data-mcp="off">MCP</button>
-                            <button class="toggle-button" id="mcp-on" data-mcp="on">MCP</button>
-                        </div>
+                    <!-- Hidden controls for functionality -->
+                    <div style="display: none;">
+                        <button class="toggle-button" id="agent-mode-off" data-mode="off">Agent</button>
+                        <button class="toggle-button active" id="agent-mode-auto" data-mode="auto">Agent</button>
+                        <button class="toggle-button active" id="mcp-off" data-mcp="off">MCP</button>
+                        <button class="toggle-button" id="mcp-on" data-mcp="on">MCP</button>
                     </div>
                 </div>
             </div>
@@ -1598,6 +1689,10 @@ Always explain what you're doing and why. Be thorough but concise.`;
                     const agentModeAuto = document.getElementById('agent-mode-auto');
                     const mcpOff = document.getElementById('mcp-off');
                     const mcpOn = document.getElementById('mcp-on');
+                    // Toolbar buttons
+                    const agentButton = document.getElementById('agent-button');
+                    const formatButton = document.getElementById('format-button');
+                    const atButton = document.getElementById('at-button');
                     // Model selection element
                     const modelSelectElement = document.getElementById('model-select');
                     // Keep track of the last assistant message for updating
@@ -1941,8 +2036,40 @@ Always explain what you're doing and why. Be thorough but concise.`;
                     mcpOff.style.display = 'inline-block';
                     mcpOn.style.display = 'none';
 
+                    // Initialize toolbar button states
+                    if (agentMode === 'auto') {
+                        agentButton.classList.add('active');
+                    }
+
                     // Add change handler for model dropdown
                     modelSelectElement.addEventListener('change', changeModel);
+
+                    // Add click handlers for toolbar buttons
+                    agentButton.addEventListener('click', () => {
+                        // Toggle agent mode
+                        agentMode = agentMode === 'auto' ? 'off' : 'auto';
+
+                        // Update button appearance
+                        if (agentMode === 'auto') {
+                            agentButton.classList.add('active');
+                            // Update hidden buttons for functionality
+                            agentModeAuto.click();
+                        } else {
+                            agentButton.classList.remove('active');
+                            // Update hidden buttons for functionality
+                            agentModeOff.click();
+                        }
+                    });
+
+                    formatButton.addEventListener('click', () => {
+                        // Format options functionality would go here
+                        console.log('Format button clicked');
+                    });
+
+                    atButton.addEventListener('click', () => {
+                        // Mention functionality would go here
+                        console.log('At button clicked');
+                    });
 
                     // Function to handle actionable items
                     function handleActionableItems(items) {
