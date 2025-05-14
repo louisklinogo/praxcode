@@ -38,3 +38,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed issue with indexing not working properly on Windows
 - Fixed issue with code explanation not working properly on large codebases
 - Fixed issue with RAG results not being properly formatted in the chat UI
+
+## [0.1.2] - 2025-05-01
+
+### Added
+- Added support for caching embeddings
+- Added support for caching LLM responses
+- Added support for caching RAG results
+- Added support for caching chat history
+- Added support for caching code explanations
+- Added support for caching generated documentation
+- Added support for caching generated tests
+
+## [0.1.3] - 2025-05-13
+
+### Added
+- Added support for caching generated commit messages
+- Added support for caching generated refactoring suggestions
+- Added support for caching generated inline code completions
