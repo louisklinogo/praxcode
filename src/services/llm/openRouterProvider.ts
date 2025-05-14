@@ -121,7 +121,7 @@ export class OpenRouterProvider implements LLMService {
                     headers: {
                         'Authorization': `Bearer ${this.apiKey}`,
                         'Content-Type': 'application/json',
-                        'HTTP-Referer': 'https://github.com/praxcode/praxcode', // Identify the client
+                        'HTTP-Referer': 'https://github.com/spockstein/praxcode', // Identify the client
                         'X-Title': 'PraxCode VS Code Extension' // Identify the client
                     }
                 }
@@ -186,7 +186,7 @@ export class OpenRouterProvider implements LLMService {
                     headers: {
                         'Authorization': `Bearer ${this.apiKey}`,
                         'Content-Type': 'application/json',
-                        'HTTP-Referer': 'https://github.com/praxcode/praxcode', // Identify the client
+                        'HTTP-Referer': 'https://github.com/spockstein/praxcode', // Identify the client
                         'X-Title': 'PraxCode VS Code Extension' // Identify the client
                     },
                     responseType: 'stream'

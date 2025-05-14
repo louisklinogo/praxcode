@@ -644,6 +644,12 @@ Always explain what you're doing and why. Be thorough but concise.`;
                 modelName = model.substring(firstColonIndex + 1);
             }
 
+            // Special handling for x.ai models - ensure provider is set correctly
+            if (provider === 'x.ai') {
+                provider = 'xai'; // Ensure we use the correct enum value
+                logger.debug(`Converted x.ai provider to xai for internal use`);
+            }
+
             // Update the provider setting
             logger.debug(`Changing provider from ${this._configManager.getConfiguration().llmProvider} to ${provider}`);
             await vscode.workspace.getConfiguration('praxcode').update('llmProvider', provider, vscode.ConfigurationTarget.Workspace);
@@ -693,6 +699,9 @@ Always explain what you're doing and why. Be thorough but concise.`;
                     case 'openrouter':
                         currentModelValue = config.openrouterModel;
                         break;
+                    case 'xai':
+                        currentModelValue = config.xaiModel;
+                        break;
                     case 'custom':
                         currentModelValue = config.customProviderModel;
                         break;
@@ -724,6 +733,9 @@ Always explain what you're doing and why. Be thorough but concise.`;
                     case 'openrouter':
                         updatedModelValue = updatedConfig.openrouterModel;
                         break;
+                    case 'xai':
+                        updatedModelValue = updatedConfig.xaiModel;
+                        break;
                     case 'custom':
                         updatedModelValue = updatedConfig.customProviderModel;
                         break;
@@ -739,6 +751,71 @@ Always explain what you're doing and why. Be thorough but concise.`;
 
             // Store the model in memory for this session
             this._currentSessionModel = model;
+
+            // Check if we need to prompt for an API key for this provider
+            // Only check for providers that require API keys
+            if (['xai', 'openai', 'anthropic', 'google', 'openrouter', 'custom'].includes(provider)) {
+                const secretKey = `${provider}.apiKey`;
+                const apiKey = await this._configManager.getSecret(secretKey);
+
+                if (!apiKey) {
+                    logger.debug(`No ${provider} API key found, prompting user`);
+
+                    // Format provider name for display
+                    let displayName = provider;
+                    if (provider === 'xai') {
+                        displayName = 'x.ai';
+                    } else if (provider === 'openai') {
+                        displayName = 'OpenAI';
+                    } else if (provider === 'anthropic') {
+                        displayName = 'Anthropic';
+                    } else if (provider === 'openrouter') {
+                        displayName = 'OpenRouter';
+                    } else {
+                        // Capitalize first letter
+                        displayName = provider.charAt(0).toUpperCase() + provider.slice(1);
+                    }
+
+                    // Show a message in the chat
+                    this._view.webview.postMessage({
+                        command: 'addMessage',
+                        message: {
+                            role: 'assistant',
+                            content: `You need to provide a ${displayName} API key to use ${modelName}. Please enter your API key in the prompt.`
+                        }
+                    });
+
+                    // Prompt for API key
+                    const newApiKey = await vscode.window.showInputBox({
+                        prompt: `Please enter your ${displayName} API key`,
+                        password: true,
+                        ignoreFocusOut: true,
+                        placeHolder: `Enter your ${displayName} API key here...`,
+                        title: `${displayName} API Key Required`
+                    });
+
+                    if (newApiKey) {
+                        // Store the API key
+                        await this._configManager.setSecret(secretKey, newApiKey);
+                        logger.debug(`${displayName} API key stored`);
+                    } else {
+                        // User cancelled, show a message
+                        logger.debug(`User cancelled ${displayName} API key input`);
+                        this._view.webview.postMessage({
+                            command: 'addMessage',
+                            message: {
+                                role: 'assistant',
+                                content: `API key input cancelled. You need to provide a ${displayName} API key to use ${modelName}.`
+                            }
+                        });
+
+                        // Revert to previous model
+                        this._currentSessionModel = null;
+                        await this._handleGetProviderInfo();
+                        return;
+                    }
+                }
+            }
 
             // Reset the LLM service to use the new model
             logger.debug('Resetting LLM service to use the new model');
@@ -1055,7 +1132,11 @@ Always explain what you're doing and why. Be thorough but concise.`;
             case 'google':
                 return `google:${config.googleModel}`;
             case 'openrouter':
-                return `openrouter:${config.openrouterModel}`;
+                // OpenRouter is disabled, return RAG-only mode
+                logger.warn('OpenRouter provider is disabled, returning RAG-only mode');
+                return 'rag-only';
+            case 'xai':
+                return `x.ai:${config.xaiModel}`;
             case 'custom':
                 return `custom:${config.customProviderModel}`;
             default:

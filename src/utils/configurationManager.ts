@@ -10,6 +10,7 @@ export enum LLMProviderType {
     ANTHROPIC = 'anthropic',
     GOOGLE = 'google',
     OPENROUTER = 'openrouter',
+    XAI = 'xai',
     CUSTOM = 'custom',
     NONE = 'none'
 }
@@ -36,6 +37,9 @@ export interface PraxCodeConfiguration {
 
     // OpenRouter settings
     openrouterModel: string;
+
+    // x.ai settings
+    xaiModel: string;
 
     // Custom provider settings
     customProviderUrl: string;
@@ -123,6 +127,9 @@ export class ConfigurationManager {
 
             // OpenRouter settings
             openrouterModel: config.get<string>('openrouterModel', 'openai/gpt-3.5-turbo'),
+
+            // x.ai settings
+            xaiModel: config.get<string>('xaiModel', 'grok-3'),
 
             // Custom provider settings
             customProviderUrl: config.get<string>('customProviderUrl', 'http://localhost:8000'),

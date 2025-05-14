@@ -80,6 +80,9 @@ export class LLMAvailabilityService {
                 case LLMProviderType.OPENROUTER:
                     return await this.isOpenRouterAvailable();
 
+                case LLMProviderType.XAI:
+                    return await this.isXAIAvailable();
+
                 case LLMProviderType.CUSTOM:
                     return await this.isCustomProviderAvailable();
 
@@ -166,6 +169,14 @@ export class LLMAvailabilityService {
      */
     private async isOpenRouterAvailable(): Promise<boolean> {
         const apiKey = await this.configManager.getSecret('openrouter.apiKey');
+        return !!apiKey;
+    }
+
+    /**
+     * Check if x.ai is available
+     */
+    private async isXAIAvailable(): Promise<boolean> {
+        const apiKey = await this.configManager.getSecret('xai.apiKey');
         return !!apiKey;
     }
 

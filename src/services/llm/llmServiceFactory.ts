@@ -4,6 +4,7 @@ import { OpenAIProvider } from './openaiProvider';
 import { AnthropicProvider } from './anthropicProvider';
 import { GoogleProvider } from './googleProvider';
 import { OpenRouterProvider } from './openRouterProvider';
+import { XAIProvider } from './xaiProvider';
 import { CustomProvider } from './customProvider';
 import { MCPProvider } from './mcpProvider';
 import { RAGOnlyProvider } from './ragOnlyProvider';
@@ -38,6 +39,29 @@ export class LLMServiceFactory {
      * Get the active LLM service
      */
     public async getService(): Promise<LLMService> {
+        // Force reload configuration to ensure we have the latest values
+        this.configManager.reloadConfiguration();
+        const config = this.configManager.getConfiguration();
+
+        // Special handling for x.ai provider - always check for API key
+        if (config.llmProvider === LLMProviderType.XAI) {
+            const xaiApiKey = await this.configManager.getSecret('xai.apiKey');
+            if (!xaiApiKey) {
+                logger.warn('x.ai API key not found in secret storage, prompting user');
+                const newApiKey = await this.promptForApiKey('x.ai', 'xai.apiKey');
+
+                if (newApiKey) {
+                    // API key provided, create a new service
+                    logger.info('x.ai API key provided, creating new service');
+                    this.activeService = null; // Force recreation
+                } else {
+                    // No API key provided, fall back to RAG-Only mode
+                    logger.info('User cancelled x.ai API key input, falling back to RAG-Only mode');
+                    return new RAGOnlyProvider();
+                }
+            }
+        }
+
         if (!this.activeService) {
             logger.debug('No active LLM service, creating a new one');
             this.activeService = await this.createService();
@@ -46,12 +70,18 @@ export class LLMServiceFactory {
             logger.debug(`Using existing LLM service: ${this.activeService.getName()}`);
 
             // Check if the service is still valid for the current configuration
-            const config = this.configManager.getConfiguration();
             logger.debug(`Current configuration: provider=${config.llmProvider}, ollamaModel=${config.ollamaModel}`);
 
             // If the service is a RAG-Only provider but the config is set to Ollama, recreate it
             if (this.activeService.getName() === 'RAG-Only Mode' && config.llmProvider === 'ollama') {
                 logger.debug('Service is RAG-Only but config is set to Ollama, recreating service');
+                this.activeService = await this.createService();
+                logger.debug(`Created new LLM service: ${this.activeService.getName()}`);
+            }
+
+            // If the provider is x.ai but the service is not, recreate it
+            if (config.llmProvider === LLMProviderType.XAI && this.activeService.getName() !== 'x.ai') {
+                logger.debug('Provider is x.ai but service is not, recreating service');
                 this.activeService = await this.createService();
                 logger.debug(`Created new LLM service: ${this.activeService.getName()}`);
             }
@@ -188,6 +218,11 @@ export class LLMServiceFactory {
                 return new GoogleProvider(googleApiKey, config.googleModel);
 
             case LLMProviderType.OPENROUTER:
+                // OpenRouter provider is disabled
+                logger.warn('OpenRouter provider is disabled, falling back to RAG-Only mode');
+                return new RAGOnlyProvider();
+
+                /* Keeping this code commented out for future reference
                 let openrouterApiKey = await this.configManager.getSecret('openrouter.apiKey');
                 if (!openrouterApiKey) {
                     logger.warn('OpenRouter API key not found in secret storage, prompting user');
@@ -200,6 +235,21 @@ export class LLMServiceFactory {
                 }
                 logger.info(`Creating OpenRouter provider with model: ${config.openrouterModel}`);
                 return new OpenRouterProvider(openrouterApiKey, config.openrouterModel);
+                */
+
+            case LLMProviderType.XAI:
+                let xaiApiKey = await this.configManager.getSecret('xai.apiKey');
+                if (!xaiApiKey) {
+                    logger.warn('x.ai API key not found in secret storage, prompting user');
+                    xaiApiKey = await this.promptForApiKey('x.ai', 'xai.apiKey');
+
+                    if (!xaiApiKey) {
+                        logger.info('User cancelled x.ai API key input, falling back to RAG-Only mode');
+                        return new RAGOnlyProvider();
+                    }
+                }
+                logger.info(`Creating x.ai provider with model: ${config.xaiModel}`);
+                return new XAIProvider(xaiApiKey, config.xaiModel);
 
             case LLMProviderType.CUSTOM:
                 let customApiKey = await this.configManager.getSecret('custom.apiKey');
@@ -336,7 +386,9 @@ export class LLMServiceFactory {
                 models: ['gemini-pro', 'gemini-pro-vision', 'gemini-ultra']
             });
 
-            // Add OpenRouter provider
+            // OpenRouter provider is disabled
+            // Keeping this code commented out for future reference
+            /*
             const openrouterApiKey = await this.configManager.getSecret('openrouter.apiKey');
             if (openrouterApiKey) {
                 try {
@@ -357,6 +409,32 @@ export class LLMServiceFactory {
                 providers.push({
                     provider: 'OpenRouter',
                     models: ['openai/gpt-3.5-turbo', 'openai/gpt-4', 'anthropic/claude-3-opus']
+                });
+            }
+            */
+            logger.debug('OpenRouter provider is disabled');
+
+            // Add x.ai provider
+            const xaiApiKey = await this.configManager.getSecret('xai.apiKey');
+            if (xaiApiKey) {
+                try {
+                    const xaiProvider = new XAIProvider(xaiApiKey, config.xaiModel);
+                    const xaiModels = await xaiProvider.getAvailableModels();
+                    providers.push({
+                        provider: 'x.ai',
+                        models: xaiModels
+                    });
+                } catch (error) {
+                    logger.warn('Failed to get x.ai models', error);
+                    providers.push({
+                        provider: 'x.ai',
+                        models: ['grok-3', 'grok-3-latest', 'grok-3-fast-beta']
+                    });
+                }
+            } else {
+                providers.push({
+                    provider: 'x.ai',
+                    models: ['grok-3', 'grok-3-latest', 'grok-3-fast-beta']
                 });
             }
 

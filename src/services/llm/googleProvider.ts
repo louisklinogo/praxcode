@@ -90,6 +90,9 @@ export class GoogleProvider implements LLMService {
         options?: ChatCompletionOptions
     ): Promise<ChatCompletionResponse> {
         try {
+            logger.debug(`Chat with Google model: ${this.model}`);
+            logger.debug(`Using Google API URL: ${this.baseUrl}/models/${this.model}:generateContent`);
+
             // Convert messages to Google format
             const formattedMessages = messages.map(msg => ({
                 role: msg.role === 'system' ? 'user' : msg.role,
@@ -111,25 +114,37 @@ export class GoogleProvider implements LLMService {
                 formattedMessages.splice(messages.findIndex(m => m.role === 'system'), 1);
             }
 
-            // Make the API request
-            const response = await axios.post(
+            // Use fetch instead of axios for consistency
+            const response = await fetch(
                 `${this.baseUrl}/models/${this.model}:generateContent?key=${this.apiKey}`,
                 {
-                    contents: formattedMessages,
-                    generationConfig: {
-                        temperature: options?.temperature || 0.7,
-                        maxOutputTokens: options?.maxTokens || 2048,
-                        stopSequences: options?.stopSequences || []
-                    }
-                },
-                {
+                    method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
-                    }
+                    },
+                    body: JSON.stringify({
+                        contents: formattedMessages,
+                        generationConfig: {
+                            temperature: options?.temperature || 0.7,
+                            maxOutputTokens: options?.maxTokens || 2048,
+                            stopSequences: options?.stopSequences || []
+                        }
+                    })
                 }
             );
 
-            const data = response.data as GoogleResponse;
+            if (!response.ok) {
+                const errorText = await response.text();
+                logger.error(`Google API error: ${response.status} ${response.statusText}`, errorText);
+
+                if (response.status === 401) {
+                    throw new Error('Invalid Google API key. Please check your API key and try again.');
+                }
+
+                throw new Error(`Google API error: ${response.status} ${response.statusText}. ${errorText}`);
+            }
+
+            const data = await response.json() as GoogleResponse;
 
             // Extract the text content from the response
             const content = data.candidates[0].content.parts
@@ -147,15 +162,6 @@ export class GoogleProvider implements LLMService {
             };
         } catch (error) {
             logger.error('Failed to get chat completion from Google', error);
-
-            if (axios.isAxiosError(error)) {
-                if (error.response?.status === 401) {
-                    throw new Error('Invalid Google API key. Please check your API key and try again.');
-                } else if (error.response?.data) {
-                    throw new Error(`Google API error: ${JSON.stringify(error.response.data)}`);
-                }
-            }
-
             throw new Error(`Failed to get chat completion: ${error instanceof Error ? error.message : String(error)}`);
         }
     }
@@ -172,6 +178,9 @@ export class GoogleProvider implements LLMService {
         options?: ChatCompletionOptions
     ): Promise<void> {
         try {
+            logger.debug(`Streaming chat with Google model: ${this.model}`);
+            logger.debug(`Using Google API URL: ${this.baseUrl}/models/${this.model}:streamGenerateContent`);
+
             // Convert messages to Google format
             const formattedMessages = messages.map(msg => ({
                 role: msg.role === 'system' ? 'user' : msg.role,
@@ -193,88 +202,135 @@ export class GoogleProvider implements LLMService {
                 formattedMessages.splice(messages.findIndex(m => m.role === 'system'), 1);
             }
 
-            // Make the streaming API request
-            const response = await axios.post(
+            // Use fetch instead of axios for better streaming support
+            const response = await fetch(
                 `${this.baseUrl}/models/${this.model}:streamGenerateContent?key=${this.apiKey}`,
                 {
-                    contents: formattedMessages,
-                    generationConfig: {
-                        temperature: options?.temperature || 0.7,
-                        maxOutputTokens: options?.maxTokens || 2048,
-                        stopSequences: options?.stopSequences || []
-                    }
-                },
-                {
+                    method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
                     },
-                    responseType: 'stream'
+                    body: JSON.stringify({
+                        contents: formattedMessages,
+                        generationConfig: {
+                            temperature: options?.temperature || 0.7,
+                            maxOutputTokens: options?.maxTokens || 2048,
+                            stopSequences: options?.stopSequences || []
+                        }
+                    })
                 }
             );
 
-            let accumulatedContent = '';
+            if (!response.ok) {
+                const errorText = await response.text();
+                logger.error(`Google API error: ${response.status} ${response.statusText}`, errorText);
 
-            // Process the streaming response
-            response.data.on('data', (chunk: Buffer) => {
-                const lines = chunk.toString().split('\n').filter(line => line.trim() !== '');
-
-                for (const line of lines) {
-                    if (line.startsWith('data: ')) {
-                        const data = line.slice(6);
-
-                        if (data === '[DONE]') {
-                            callback({
-                                content: accumulatedContent,
-                                done: true
-                            });
-                            return;
-                        }
-
-                        try {
-                            const parsedData = JSON.parse(data);
-
-                            if (parsedData.candidates && parsedData.candidates[0].content) {
-                                const newContent = parsedData.candidates[0].content.parts
-                                    .map((part: any) => part.text)
-                                    .join('');
-
-                                accumulatedContent += newContent;
-
-                                callback({
-                                    content: accumulatedContent,
-                                    done: false
-                                });
-                            }
-                        } catch (e) {
-                            logger.error('Error parsing streaming response', e);
-                        }
-                    }
+                if (response.status === 401) {
+                    callback({
+                        content: 'Invalid Google API key. Please check your API key and try again.',
+                        done: true
+                    });
+                    return;
                 }
-            });
 
-            response.data.on('end', () => {
                 callback({
-                    content: accumulatedContent,
+                    content: `Google API error: ${response.status} ${response.statusText}. ${errorText}`,
                     done: true
                 });
-            });
+                return;
+            }
 
-            response.data.on('error', (err: Error) => {
-                logger.error('Error in streaming response', err);
-                throw err;
-            });
+            if (!response.body) {
+                logger.error('No response body from Google API');
+                callback({
+                    content: 'No response from Google API. Please try again later.',
+                    done: true
+                });
+                return;
+            }
+
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder('utf-8');
+            let buffer = '';
+            let accumulatedContent = '';
+
+            const processChunk = async () => {
+                try {
+                    const { done, value } = await reader.read();
+
+                    if (done) {
+                        // Ensure we send a final done: true message
+                        callback({
+                            content: accumulatedContent,
+                            done: true
+                        });
+                        return;
+                    }
+
+                    // Decode the chunk and add it to our buffer
+                    buffer += decoder.decode(value, { stream: true });
+
+                    // Process complete lines
+                    const lines = buffer.split('\n');
+                    // Keep the last line in the buffer if it's incomplete
+                    buffer = lines.pop() || '';
+
+                    for (const line of lines) {
+                        const trimmedLine = line.trim();
+                        if (!trimmedLine) continue;
+
+                        if (trimmedLine.startsWith('data: ')) {
+                            const data = trimmedLine.slice(6).trim();
+
+                            if (data === '[DONE]') {
+                                callback({
+                                    content: accumulatedContent,
+                                    done: true
+                                });
+                                return;
+                            }
+
+                            try {
+                                const parsedData = JSON.parse(data);
+
+                                if (parsedData.candidates && parsedData.candidates[0].content) {
+                                    const newContent = parsedData.candidates[0].content.parts
+                                        .map((part: any) => part.text)
+                                        .join('');
+
+                                    accumulatedContent += newContent;
+
+                                    callback({
+                                        content: accumulatedContent,
+                                        done: false
+                                    });
+                                }
+                            } catch (parseError) {
+                                logger.error('Error parsing streaming response from Google', parseError);
+                            }
+                        }
+                    }
+
+                    // Continue processing chunks
+                    await processChunk();
+                } catch (error) {
+                    logger.error('Error reading stream from Google', error);
+                    callback({
+                        content: `Error reading stream: ${error instanceof Error ? error.message : String(error)}`,
+                        done: true
+                    });
+                }
+            };
+
+            // Start processing the stream
+            await processChunk();
         } catch (error) {
             logger.error('Failed to stream chat completion from Google', error);
 
-            if (axios.isAxiosError(error)) {
-                if (error.response?.status === 401) {
-                    throw new Error('Invalid Google API key. Please check your API key and try again.');
-                } else if (error.response?.data) {
-                    throw new Error(`Google API error: ${JSON.stringify(error.response.data)}`);
-                }
-            }
-
-            throw new Error(`Failed to stream chat completion: ${error instanceof Error ? error.message : String(error)}`);
+            callback({
+                content: `Failed to stream chat completion: ${error instanceof Error ? error.message : String(error)}`,
+                done: true
+            });
         }
     }
 }

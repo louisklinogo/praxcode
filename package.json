@@ -174,7 +174,7 @@
             "openai",
             "anthropic",
             "google",
-            "openrouter",
+            "xai",
             "custom",
             "none"
           ],
@@ -210,6 +210,11 @@
           "type": "string",
           "default": "openai/gpt-3.5-turbo",
           "description": "The model to use with OpenRouter"
+        },
+        "praxcode.xaiModel": {
+          "type": "string",
+          "default": "grok-3",
+          "description": "The model to use with x.ai (e.g., grok-3, grok-3-latest)"
         },
         "praxcode.customProviderUrl": {
           "type": "string",
