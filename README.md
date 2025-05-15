@@ -1,7 +1,7 @@
 # PraxCode - AI Code Assistant for VS Code
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/spockstein/praxcode/main/resources/praxcode-icon-128.png" alt="PraxCode Logo" width="128" height="128">
+  <img src="icon.png" alt="PraxCode Logo" width="128" height="128">
 </p>
 
 <p align="center">
@@ -27,21 +27,21 @@ PraxCode is a powerful, context-aware AI code assistant for Visual Studio Code t
 PraxCode indexes your entire codebase to provide truly context-aware assistance. The built-in Retrieval-Augmented Generation (RAG) system ensures that AI responses are grounded in your specific code, not just generic knowledge.
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/spockstein/praxcode/main/resources/images/screenshot-2.png" alt="PraxCode analyzing a codebase and providing context-aware responses" width="800">
+  <i>[Screenshot: PraxCode analyzing a codebase and providing context-aware responses]</i>
 </p>
 
 ### 💬 Intelligent Chat Interface
 The sidebar chat interface provides a seamless way to interact with your AI assistant. Ask questions about your code, request explanations, or get suggestions for improvements - all with the context of your entire codebase.
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/spockstein/praxcode/main/resources/images/screenshot-1.png" alt="PraxCode's chat interface showing the welcome screen" width="800">
+  <i>[Screenshot: PraxCode's chat interface showing the welcome screen]</i>
 </p>
 
 ### 🔍 Code Explanation
 Select any code snippet and get a detailed explanation with the "Explain Code" command. PraxCode analyzes the selected code in the context of your entire codebase to provide comprehensive explanations.
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/spockstein/praxcode/main/resources/images/screenshot-2.png" alt="PraxCode explaining code with context from the codebase" width="800">
+  <i>[Screenshot: PraxCode explaining code with context from the codebase]</i>
 </p>
 
 ### 🌐 Multi-Provider Support
@@ -113,7 +113,7 @@ When using local models, your code never leaves your machine. The vector store i
 4. Once complete, PraxCode will have a deep understanding of your codebase
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/spockstein/praxcode/main/resources/images/screenshot-1.png" alt="PraxCode with Index Codebase button" width="800">
+  <i>[Screenshot: PraxCode with Index Codebase button]</i>
 </p>
 
 ## 💻 Usage Examples
@@ -216,5 +216,7 @@ Contributions are welcome! Please feel free to submit a Pull Request or open an 
 </p>
 
 > **Note:** This extension is open source! Visit our [GitHub repository](https://github.com/spockstein/praxcode) to contribute, report issues, or learn more.
+>
+> **Note:** Screenshots in this README will be updated with actual images in the next release.
 
 **Enjoy coding with PraxCode!**
