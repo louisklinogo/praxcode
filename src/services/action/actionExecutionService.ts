@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import * as path from 'path';
 import { logger } from '../../utils/logger';
 import { DiffParser, ParsedDiff } from './diffParser';
 
@@ -493,90 +494,112 @@ export class ActionExecutionService {
      * @param overwrite Whether to overwrite the file if it exists
      * @returns A promise that resolves to true if the file was written, false otherwise
      */
-    public static async writeFile(filePath: string, content: string, overwrite: boolean = false): Promise<boolean> {
-        try {
-            // Resolve the file path relative to the workspace root if it's not absolute
-            let resolvedFilePath: string;
-            let fileUri: vscode.Uri;
+public static async writeFile(filePath: string, content: string, overwrite: boolean = false): Promise<boolean> {
+    try {
+        // --- Existing filePath to fileUri resolution logic ---
+        let resolvedFilePath: string;
+        let fileUri: vscode.Uri;
 
-            // Check if the path is absolute
-            if (filePath.startsWith('/') || filePath.match(/^[A-Za-z]:\\/)) {
-                // It's an absolute path, use it directly
-                resolvedFilePath = filePath;
-                fileUri = vscode.Uri.file(resolvedFilePath);
-            } else {
-                // It's a relative path, resolve it against the workspace root
-                const workspaceFolders = vscode.workspace.workspaceFolders;
-                if (!workspaceFolders || workspaceFolders.length === 0) {
-                    logger.error('Cannot resolve file path: No workspace folder open');
-                    vscode.window.showErrorMessage('Cannot resolve file path: No workspace folder open');
-                    return false;
-                }
-
-                // Try to find the file in the workspace
-                const workspaceRoot = workspaceFolders[0].uri;
-                fileUri = vscode.Uri.joinPath(workspaceRoot, filePath);
-                resolvedFilePath = fileUri.fsPath;
-
-                // Log the resolved path
-                logger.debug('Resolved file path for writing', {
-                    originalPath: filePath,
-                    resolvedPath: resolvedFilePath
-                });
-            }
-
-            // Check if the file exists using VS Code API
-            let fileExists = false;
-            try {
-                await vscode.workspace.fs.stat(fileUri);
-                fileExists = true;
-
-                if (!overwrite) {
-                    logger.warn(`File ${resolvedFilePath} already exists and overwrite is false`);
-                    return false;
-                }
-            } catch (error) {
-                // File doesn't exist, which is fine
-                logger.debug(`File ${resolvedFilePath} doesn't exist, will create it`);
-            }
-
-            // Create parent directories if they don't exist
-            try {
-                // Get the parent directory URI
-                const dirUri = vscode.Uri.joinPath(fileUri, '..');
-
-                // Try to stat the directory to see if it exists
-                try {
-                    await vscode.workspace.fs.stat(dirUri);
-                    // Directory exists, no need to create it
-                } catch (error) {
-                    // Directory doesn't exist, create it
-                    logger.debug(`Creating directory ${dirUri.fsPath}`);
-                    await vscode.workspace.fs.createDirectory(dirUri);
-                }
-
-                // Write the file using VS Code API
-                const encoder = new TextEncoder();
-                await vscode.workspace.fs.writeFile(fileUri, encoder.encode(content));
-
-                logger.info(`Successfully ${fileExists ? 'updated' : 'created'} file ${resolvedFilePath}`);
-
-                // Open the file in the editor
-                const document = await vscode.workspace.openTextDocument(fileUri);
-                await vscode.window.showTextDocument(document);
-
-                return true;
-            } catch (error) {
-                logger.error(`Error writing file ${resolvedFilePath}`, error);
-                vscode.window.showErrorMessage(`Error writing file: ${error instanceof Error ? error.message : String(error)}`);
-                return false;
-            }
-        } catch (error) {
-            logger.error(`Error writing file ${filePath}`, error);
-            vscode.window.showErrorMessage(`Error writing file: ${error instanceof Error ? error.message : String(error)}`);
+        if (!filePath || filePath.trim() === '') { // Added check for empty/blank filePath
+            logger.error('Error writing file: File path is empty or invalid.');
+            vscode.window.showErrorMessage('Error writing file: File path is empty or invalid.');
             return false;
         }
+
+        // Check if the path is absolute
+        if (path.isAbsolute(filePath)) { // Using path.isAbsolute for better check
+            resolvedFilePath = filePath;
+            try {
+                fileUri = vscode.Uri.file(resolvedFilePath);
+            } catch (e) {
+                logger.error(`Error creating URI for absolute path: ${resolvedFilePath}`, e);
+                vscode.window.showErrorMessage(`Error writing file: Invalid file path provided: ${filePath}`);
+                return false;
+            }
+        } else {
+            // It's a relative path, resolve it against the workspace root
+            const workspaceFolders = vscode.workspace.workspaceFolders;
+            if (!workspaceFolders || workspaceFolders.length === 0) {
+                logger.error('Cannot resolve relative file path: No workspace folder open');
+                vscode.window.showErrorMessage('Cannot resolve relative file path: No workspace folder open. Please open a folder.');
+                return false;
+            }
+            const workspaceRoot = workspaceFolders[0].uri;
+            // Intentionally not using path.join here as vscode.Uri.joinPath is for URIs
+            try {
+                fileUri = vscode.Uri.joinPath(workspaceRoot, filePath);
+            } catch (e) {
+                logger.error(`Error creating URI for relative path: ${filePath} in workspace ${workspaceRoot.toString()}`, e);
+                vscode.window.showErrorMessage(`Error writing file: Invalid relative file path provided: ${filePath}`);
+                return false;
+            }
+            resolvedFilePath = fileUri.fsPath;
+        }
+
+        // Validate the URI scheme
+        if (fileUri.scheme !== 'file') {
+            logger.error(`Error writing file: Invalid URI scheme '${fileUri.scheme}' for path '${filePath}'. Expected 'file'.`);
+            vscode.window.showErrorMessage(`Error writing file: Path '${filePath}' did not resolve to a valid file location.`);
+            return false;
+        }
+
+        // Log the resolved path
+        logger.debug('Resolved file path for writing', {
+            originalPath: filePath,
+            resolvedPath: fileUri.fsPath // Use fileUri.fsPath for logging the actual path
+        });
+
+        // Check if the file exists using VS Code API
+        let fileExists = false;
+        try {
+            await vscode.workspace.fs.stat(fileUri);
+            fileExists = true;
+
+            if (!overwrite) {
+                logger.warn(`File ${fileUri.fsPath} already exists and overwrite is false`);
+                // Not showing a user message here as this function is a service.
+                // The caller (MCPActionHandler) should handle user interaction if overwrite is false.
+                return false; 
+            }
+        } catch (error) {
+            // File doesn't exist, which is fine if we intend to create it.
+            logger.debug(`File ${fileUri.fsPath} doesn't exist, will create it`);
+        }
+
+        // Create parent directories if they don't exist
+        try {
+            const dirUri = vscode.Uri.joinPath(fileUri, '..');
+            try {
+                await vscode.workspace.fs.stat(dirUri);
+            } catch (error) { // Assuming error means directory doesn't exist
+                logger.debug(`Creating directory ${dirUri.fsPath}`);
+                await vscode.workspace.fs.createDirectory(dirUri);
+            }
+
+            // Write the file using VS Code API
+            const encoder = new TextEncoder(); // Should be outside try-catch if used in finally
+            await vscode.workspace.fs.writeFile(fileUri, encoder.encode(content));
+
+            logger.info(`Successfully ${fileExists ? 'updated' : 'created'} file ${fileUri.fsPath}`);
+
+            // Open the file in the editor
+            const document = await vscode.workspace.openTextDocument(fileUri); 
+            await vscode.window.showTextDocument(document);
+
+            return true;
+        } catch (error) { // Catches errors from createDirectory, writeFile
+            logger.error(`Error writing file operations for ${fileUri.fsPath}`, error);
+            vscode.window.showErrorMessage(`Error writing file ${fileUri.fsPath}: ${error instanceof Error ? error.message : String(error)}`);
+            return false;
+        }
+
+    } catch (error) // Catch errors from initial URI parsing or other unexpected issues
+    {
+        logger.error(`Critical error in writeFile for path ${filePath}`, error);
+        vscode.window.showErrorMessage(`Critical error processing file path '${filePath}': ${error instanceof Error ? error.message : String(error)}`);
+        return false;
     }
+}
 
     /**
      * Dispose of resources
